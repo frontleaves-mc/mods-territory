@@ -1,0 +1,31 @@
+{
+  "item.territory.territory_wand": "Territory Wand",
+  "item.territory.admin_territory_wand": "Admin Territory Wand",
+  "itemGroup.territory": "Frontleaves Territory",
+
+  "block.territory.territory_table": "Territory Table",
+  "block.territory.admin_territory_table": "Admin Territory Table",
+
+  "territory.msg.pos1_set": "Position 1 set: (%s, %s, %s)",
+  "territory.msg.pos2_set": "Position 2 set: (%s, %s, %s)",
+  "territory.msg.set_pos1_first": "Set position 1 first (left-click)",
+  "territory.msg.selection_cleared": "Selection cleared",
+  "territory.msg.selection_completed": "Selection completed! Volume: %s blocks",
+  "territory.msg.volume_too_small": "Selection volume too small (minimum 4 blocks)",
+  "territory.msg.volume_too_large": "Selection volume too large (maximum 100000 blocks, got %s)",
+  "territory.msg.validated": "Selection validated! Volume: %s blocks",
+  "territory.msg.admin_only": "Only administrators can use this tool",
+  "territory.msg.no_permission": "You don't have permission to use this command",
+
+  "territory.msg.create_success": "Territory created successfully!",
+  "territory.msg.create_fail_no_selection": "Please select an area with the territory wand first",
+  "territory.msg.create_fail_overlap": "Overlaps with existing territory",
+  "territory.msg.create_fail_outside": "Territory table is not within the selection",
+  "territory.msg.territory_deleted": "Territory deleted",
+  "territory.msg.right_click_confirm": "Right-click the territory table to confirm creation",
+
+  "territory.cmd.not_implemented": "Not implemented yet",
+  "territory.cmd.wand_given": "Gave you a Territory Wand",
+  "territory.cmd.admin_wand_given": "Gave you an Admin Territory Wand",
+  "territory.cmd.players_only": "Only players can use this command"
+}

@@ -1,0 +1,18 @@
+{
+	"format_version": "1.21.11",
+	"credit": "Made with Blockbench",
+	"parent": "minecraft:item/handheld",
+	"textures": {
+		"layer0": "territory:item/territory_wand"
+	},
+	"display": {
+		"thirdperson_righthand": {
+			"rotation": [0, 0, 35],
+			"translation": [1.25, 3.75, 1.25]
+		},
+		"thirdperson_lefthand": {
+			"rotation": [0, 0, -48],
+			"translation": [0.25, 3.75, 1.25]
+		}
+	}
+}

@@ -1,0 +1,31 @@
+{
+  "item.territory.territory_wand": "领地选区工具",
+  "item.territory.admin_territory_wand": "管理员领地工具",
+  "itemGroup.territory": "锋楪领地",
+
+  "block.territory.territory_table": "领地台",
+  "block.territory.admin_territory_table": "管理员领地台",
+
+  "territory.msg.pos1_set": "位置 1 已设置：(%s, %s, %s)",
+  "territory.msg.pos2_set": "位置 2 已设置：(%s, %s, %s)",
+  "territory.msg.set_pos1_first": "请先设置位置 1（左键点击）",
+  "territory.msg.selection_cleared": "选区已清除",
+  "territory.msg.selection_completed": "选区完成！体积：%s 方块",
+  "territory.msg.volume_too_small": "选区体积太小（最少 4 方块）",
+  "territory.msg.volume_too_large": "选区体积太大（最大 100000 方块，当前 %s）",
+  "territory.msg.validated": "选区验证通过！体积：%s 方块",
+  "territory.msg.admin_only": "只有管理员可以使用此工具",
+  "territory.msg.no_permission": "你没有权限使用此命令",
+
+  "territory.msg.create_success": "领地创建成功！",
+  "territory.msg.create_fail_no_selection": "请先用圈地棒选择区域",
+  "territory.msg.create_fail_overlap": "与已有领地重叠",
+  "territory.msg.create_fail_outside": "领地台不在选区内",
+  "territory.msg.territory_deleted": "领地已删除",
+  "territory.msg.right_click_confirm": "右键领地台以确认创建领地",
+
+  "territory.cmd.not_implemented": "暂未实现",
+  "territory.cmd.wand_given": "已给予领地选区工具",
+  "territory.cmd.admin_wand_given": "已给予管理员领地工具",
+  "territory.cmd.players_only": "只有玩家可以使用此命令"
+}
