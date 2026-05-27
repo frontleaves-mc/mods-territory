@@ -50,9 +50,17 @@ public class TerritoryTableHandler {
         if (!(event.getEntity() instanceof ServerPlayer player)) return;
 
         BlockEntity be = event.getLevel().getBlockEntity(event.getPos());
-        if (!(be instanceof TerritoryTableBlockEntity tableBE)) return;
+        if (!(be instanceof TerritoryTableBlockEntity tableBE)) {
+            player.displayClientMessage(
+                Component.translatable("territory.msg.create_fail_internal_error").withStyle(ChatFormatting.RED), false);
+            return;
+        }
 
-        if (tableBE.getTerritoryUuid() != null) return;
+        if (tableBE.getTerritoryUuid() != null) {
+            player.displayClientMessage(
+                Component.translatable("territory.msg.table_already_bound").withStyle(ChatFormatting.RED), false);
+            return;
+        }
 
         ServerSelectionCache.SelectionEntry selection = ServerSelectionCache.get(player.getUUID());
         if (selection == null || !selection.validated()) {

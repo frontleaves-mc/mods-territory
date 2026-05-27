@@ -18,10 +18,12 @@
   "territory.msg.no_permission": "You don't have permission to use this command",
 
   "territory.msg.create_success": "Territory created successfully!",
+  "territory.msg.create_fail_internal_error": "Internal error: unable to get territory table data",
   "territory.msg.create_fail_no_selection": "Please select an area with the territory wand first",
   "territory.msg.create_fail_overlap": "Overlaps with existing territory",
   "territory.msg.create_fail_outside": "Territory table is not within the selection",
   "territory.msg.territory_deleted": "Territory deleted",
+  "territory.msg.table_already_bound": "This territory table is already in use",
   "territory.msg.right_click_confirm": "Right-click the territory table to confirm creation",
 
   "territory.cmd.not_implemented": "Not implemented yet",

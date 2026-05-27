@@ -18,10 +18,12 @@
   "territory.msg.no_permission": "你没有权限使用此命令",
 
   "territory.msg.create_success": "领地创建成功！",
+  "territory.msg.create_fail_internal_error": "内部错误：无法获取领地台数据",
   "territory.msg.create_fail_no_selection": "请先用圈地棒选择区域",
   "territory.msg.create_fail_overlap": "与已有领地重叠",
   "territory.msg.create_fail_outside": "领地台不在选区内",
   "territory.msg.territory_deleted": "领地已删除",
+  "territory.msg.table_already_bound": "该领地台已被使用",
   "territory.msg.right_click_confirm": "右键领地台以确认创建领地",
 
   "territory.cmd.not_implemented": "暂未实现",
