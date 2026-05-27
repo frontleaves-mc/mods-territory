@@ -20,5 +20,8 @@ hs_err_pid*
 # Common working directory
 run
 
+# NeoForge generated resources
+src/generated/
+
 ### AI ###
 .omo/
