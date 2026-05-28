@@ -1,21 +1,23 @@
 package com.frontleaves.mods.territory.item;
 
-import com.frontleaves.mods.territory.client.ClientSelectionState;
-import com.frontleaves.mods.territory.network.SelectionUpdatePayload;
-import net.minecraft.ChatFormatting;
-import net.minecraft.network.chat.Component;
+import com.frontleaves.mods.territory.event.WandInteractionHandler;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.InteractionResultHolder;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.UseOnContext;
-import net.neoforged.neoforge.network.PacketDistributor;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
 
 /**
  * 管理员领地选区工具 — 与普通领地工具交互逻辑一致，但：
  * <ul>
  *   <li>无体积限制（服务端跳过校验）</li>
  *   <li>仅 OP（permission level ≥ 2）可使用选区功能</li>
- *   <li>使用独立的 {@link ClientSelectionState#getAdmin()} 选区状态</li>
+ *   <li>使用独立的 {@link com.frontleaves.mods.territory.client.ClientSelectionState#getAdmin()} 选区状态</li>
  * </ul>
  */
 public class AdminTerritoryWandItem extends Item {
@@ -30,37 +32,32 @@ public class AdminTerritoryWandItem extends Item {
             Player player = context.getPlayer();
             if (player == null) return InteractionResult.PASS;
 
-            ClientSelectionState state = ClientSelectionState.getAdmin();
-
-            if (player.isShiftKeyDown()) {
-                state.clearSelection();
-                player.displayClientMessage(
-                        Component.translatable("territory.msg.selection_cleared").withStyle(ChatFormatting.YELLOW), false);
-                return InteractionResult.SUCCESS;
-            }
-
-            var pos = context.getClickedPos();
-            String error = state.setPos2(pos);
-            if (error != null) {
-                player.displayClientMessage(
-                        Component.translatable(error).withStyle(ChatFormatting.RED), false);
-                return InteractionResult.FAIL;
-            }
-
-            player.displayClientMessage(
-                    Component.translatable("territory.msg.pos2_set", pos.getX(), pos.getY(), pos.getZ())
-                            .withStyle(ChatFormatting.GREEN), false);
-
-            PacketDistributor.sendToServer(
-                new SelectionUpdatePayload(
-                    state.getPos1(),
-                    state.getPos2(),
-                    context.getLevel().dimension().location().toString(),
-                    true
-                )
+            WandInteractionHandler.handleWandInteraction(
+                player,
+                context.getClickedPos(),
+                true,   // isAdminWand
+                player.isShiftKeyDown()
             );
             return InteractionResult.SUCCESS;
         }
         return InteractionResult.PASS;
+    }
+
+    @Override
+    public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
+        if (level.isClientSide()) {
+            var hitResult = player.pick(player.blockInteractionRange(), 0f, false);
+            if (hitResult.getType() == HitResult.Type.BLOCK) {
+                var blockHit = (BlockHitResult) hitResult;
+                WandInteractionHandler.handleWandInteraction(
+                    player,
+                    blockHit.getBlockPos(),
+                    true,   // isAdminWand
+                    player.isShiftKeyDown()
+                );
+                return InteractionResultHolder.success(player.getItemInHand(hand));
+            }
+        }
+        return InteractionResultHolder.pass(player.getItemInHand(hand));
     }
 }
