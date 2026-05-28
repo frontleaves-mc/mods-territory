@@ -8,8 +8,11 @@
 
   "territory.msg.pos1_set": "Position 1 set: (%s, %s, %s)",
   "territory.msg.pos2_set": "Position 2 set: (%s, %s, %s)",
+  "territory.msg.pos2_updated": "Position 2 updated: (%s, %s, %s)",
   "territory.msg.set_pos1_first": "Set position 1 first (left-click)",
   "territory.msg.selection_cleared": "Selection cleared",
+  "territory.msg.selection_expanded": "Selection expanded 1 block toward %s",
+  "territory.msg.selection_shrunk": "Selection shrunk 1 block toward %s",
   "territory.msg.selection_completed": "Selection completed! Volume: %s blocks",
   "territory.msg.volume_too_small": "Selection volume too small (minimum 4 blocks)",
   "territory.msg.volume_too_large": "Selection volume too large (maximum 100000 blocks, got %s)",

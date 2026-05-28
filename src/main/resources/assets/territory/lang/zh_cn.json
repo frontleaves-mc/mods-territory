@@ -8,8 +8,11 @@
 
   "territory.msg.pos1_set": "位置 1 已设置：(%s, %s, %s)",
   "territory.msg.pos2_set": "位置 2 已设置：(%s, %s, %s)",
+  "territory.msg.pos2_updated": "位置 2 已更新：(%s, %s, %s)",
   "territory.msg.set_pos1_first": "请先设置位置 1（左键点击）",
   "territory.msg.selection_cleared": "选区已清除",
+  "territory.msg.selection_expanded": "选区已向 %s 方向扩展 1 格",
+  "territory.msg.selection_shrunk": "选区已向 %s 方向收缩 1 格",
   "territory.msg.selection_completed": "选区完成！体积：%s 方块",
   "territory.msg.volume_too_small": "选区体积太小（最少 4 方块）",
   "territory.msg.volume_too_large": "选区体积太大（最大 100000 方块，当前 %s）",
