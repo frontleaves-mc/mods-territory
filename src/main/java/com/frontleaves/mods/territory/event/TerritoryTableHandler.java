@@ -49,6 +49,9 @@ public class TerritoryTableHandler {
         if (event.getLevel().isClientSide()) return;
         if (!(event.getEntity() instanceof ServerPlayer player)) return;
 
+        BlockState state = event.getLevel().getBlockState(event.getPos());
+        if (!state.is(Territory.TERRITORY_TABLE.get()) && !state.is(Territory.ADMIN_TERRITORY_TABLE.get())) return;
+
         BlockEntity be = event.getLevel().getBlockEntity(event.getPos());
         if (!(be instanceof TerritoryTableBlockEntity tableBE)) {
             player.displayClientMessage(
