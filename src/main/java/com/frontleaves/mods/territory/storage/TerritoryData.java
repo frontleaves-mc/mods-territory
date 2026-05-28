@@ -17,6 +17,9 @@ public class TerritoryData {
     private String createdAt;
     private List<MemberEntry> members;
     private Map<String, String> flags;
+    private Double spawnX;
+    private Double spawnY;
+    private Double spawnZ;
 
     public TerritoryData() {
     }
@@ -67,6 +70,11 @@ public class TerritoryData {
             membersList.add(memberMap);
         }
         map.put("members", membersList);
+        if (this.hasSpawn()) {
+            map.put("spawnX", spawnX);
+            map.put("spawnY", spawnY);
+            map.put("spawnZ", spawnZ);
+        }
         map.put("flags", flags);
 
         return map;
@@ -85,6 +93,9 @@ public class TerritoryData {
         data.maxY = getInt(map, "maxY");
         data.maxZ = getInt(map, "maxZ");
         data.createdAt = getString(map, "createdAt");
+        data.spawnX = getDoubleOrNull(map, "spawnX");
+        data.spawnY = getDoubleOrNull(map, "spawnY");
+        data.spawnZ = getDoubleOrNull(map, "spawnZ");
 
         data.members = new ArrayList<>();
         Object membersObj = map.get("members");
@@ -125,6 +136,14 @@ public class TerritoryData {
             return ((Number) value).intValue();
         }
         return 0;
+    }
+
+    private static Double getDoubleOrNull(Map<String, Object> map, String key) {
+        Object value = map.get(key);
+        if (value instanceof Number) {
+            return ((Number) value).doubleValue();
+        }
+        return null;
     }
 
     public static class MemberEntry {
@@ -183,4 +202,17 @@ public class TerritoryData {
 
     public Map<String, String> flags() { return flags; }
     public void flags(Map<String, String> flags) { this.flags = flags; }
+
+    public boolean hasSpawn() {
+        return spawnX != null && spawnY != null && spawnZ != null;
+    }
+
+    public Double spawnX() { return spawnX; }
+    public void spawnX(Double spawnX) { this.spawnX = spawnX; }
+
+    public Double spawnY() { return spawnY; }
+    public void spawnY(Double spawnY) { this.spawnY = spawnY; }
+
+    public Double spawnZ() { return spawnZ; }
+    public void spawnZ(Double spawnZ) { this.spawnZ = spawnZ; }
 }

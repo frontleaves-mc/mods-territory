@@ -6,6 +6,7 @@ import com.frontleaves.mods.territory.block.entity.TerritoryTableBlockEntity;
 import com.frontleaves.mods.territory.command.TerritoryCommand;
 import com.frontleaves.mods.territory.data.ModDataGen;
 import com.frontleaves.mods.territory.item.AdminTerritoryWandItem;
+import com.frontleaves.mods.territory.item.TerritoryBookItem;
 import com.frontleaves.mods.territory.item.TerritoryWandItem;
 import com.frontleaves.mods.territory.network.TerritoryPayloads;
 import com.frontleaves.mods.territory.storage.ServerSelectionCache;
@@ -60,6 +61,11 @@ public class Territory {
             () -> new AdminTerritoryWandItem(new net.minecraft.world.item.Item.Properties())
     );
 
+    public static final DeferredItem<TerritoryBookItem> TERRITORY_BOOK = ITEMS.register(
+            "territory_book",
+            () -> new TerritoryBookItem(new net.minecraft.world.item.Item.Properties())
+    );
+
     // -- Blocks --
     public static final DeferredBlock<TerritoryTableBlock> TERRITORY_TABLE = BLOCKS.register(
             "territory_table",
@@ -102,6 +108,7 @@ public class Territory {
                     .displayItems((parameters, output) -> {
                         output.accept(TERRITORY_WAND.get());
                         output.accept(ADMIN_TERRITORY_WAND.get());
+                        output.accept(TERRITORY_BOOK.get());
                         output.accept(TERRITORY_TABLE.get());
                         output.accept(ADMIN_TERRITORY_TABLE.get());
                     })

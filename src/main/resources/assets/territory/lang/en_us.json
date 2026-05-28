@@ -1,6 +1,7 @@
 {
   "item.territory.territory_wand": "Territory Wand",
   "item.territory.admin_territory_wand": "Admin Territory Wand",
+  "item.territory.territory_book": "Territory Book",
   "itemGroup.territory": "Frontleaves Territory",
 
   "block.territory.territory_table": "Territory Table",
@@ -28,6 +29,23 @@
   "territory.msg.territory_deleted": "Territory deleted",
   "territory.msg.table_already_bound": "This territory table is already in use",
   "territory.msg.right_click_confirm": "Right-click the territory table to confirm creation",
+
+  "territory.msg.teleport_cooldown": "Teleport on cooldown, please wait %s seconds",
+  "territory.msg.teleport_not_found": "Territory not found",
+  "territory.msg.teleport_no_permission": "You don't have permission to teleport to this territory",
+  "territory.msg.teleport_success": "Teleported to territory %s",
+  "territory.msg.spawn_not_in_territory": "This location is not inside a territory",
+  "territory.msg.spawn_no_permission": "You don't have permission to set spawn in this territory",
+  "territory.msg.spawn_set_success": "Spawn point set in territory %s",
+
+  "gui.territory.book.title": "Territory Book",
+  "gui.territory.book.tab.owned": "My Territories",
+  "gui.territory.book.tab.shared": "Shared Territories",
+  "gui.territory.book.search_hint": "Search territories...",
+  "gui.territory.book.empty.owned": "You don't have any territories",
+  "gui.territory.book.empty.shared": "No territories shared with you",
+  "gui.territory.book.empty.search": "No matching territories found",
+  "gui.territory.book.stats": "Total: %s territories",
 
   "territory.cmd.not_implemented": "Not implemented yet",
   "territory.cmd.wand_given": "Gave you a Territory Wand",

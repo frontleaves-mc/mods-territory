@@ -1,6 +1,7 @@
 {
   "item.territory.territory_wand": "领地选区工具",
   "item.territory.admin_territory_wand": "管理员领地工具",
+  "item.territory.territory_book": "领地之书",
   "itemGroup.territory": "锋楪领地",
 
   "block.territory.territory_table": "领地台",
@@ -28,6 +29,23 @@
   "territory.msg.territory_deleted": "领地已删除",
   "territory.msg.table_already_bound": "该领地台已被使用",
   "territory.msg.right_click_confirm": "右键领地台以确认创建领地",
+
+  "territory.msg.teleport_cooldown": "传送冷却中，请等待 %s 秒",
+  "territory.msg.teleport_not_found": "领地不存在",
+  "territory.msg.teleport_no_permission": "你没有权限传送到该领地",
+  "territory.msg.teleport_success": "已传送到领地 %s",
+  "territory.msg.spawn_not_in_territory": "该位置不在领地内",
+  "territory.msg.spawn_no_permission": "你没有权限在该领地设置传送点",
+  "territory.msg.spawn_set_success": "已在领地 %s 设置传送点",
+
+  "gui.territory.book.title": "领地之书",
+  "gui.territory.book.tab.owned": "我的领地",
+  "gui.territory.book.tab.shared": "共享领地",
+  "gui.territory.book.search_hint": "搜索领地...",
+  "gui.territory.book.empty.owned": "你还没有任何领地",
+  "gui.territory.book.empty.shared": "没有共享给你的领地",
+  "gui.territory.book.empty.search": "没有找到匹配的领地",
+  "gui.territory.book.stats": "共 %s 个领地",
 
   "territory.cmd.not_implemented": "暂未实现",
   "territory.cmd.wand_given": "已给予领地选区工具",

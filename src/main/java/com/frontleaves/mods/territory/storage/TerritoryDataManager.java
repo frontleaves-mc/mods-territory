@@ -75,6 +75,20 @@ public class TerritoryDataManager {
         writeOwnerFile(ownerUuid, ownerMap.get(ownerUuid));
     }
 
+    public synchronized void updateTerritory(TerritoryData data) {
+        String ownerUuid = data.ownerUuid();
+        List<TerritoryData> territories = ownerMap.get(ownerUuid);
+        if (territories != null) {
+            for (int i = 0; i < territories.size(); i++) {
+                if (territories.get(i).uuid().equals(data.uuid())) {
+                    territories.set(i, data);
+                    writeOwnerFile(ownerUuid, territories);
+                    return;
+                }
+            }
+        }
+    }
+
     public synchronized boolean deleteTerritory(String ownerUuid, String territoryUuid) {
         List<TerritoryData> territories = ownerMap.get(ownerUuid);
         if (territories == null) return false;
@@ -120,6 +134,47 @@ public class TerritoryDataManager {
             }
         }
         return Optional.empty();
+    }
+
+    public synchronized List<TerritoryData> findTerritoriesByOwner(String ownerUuid) {
+        return new ArrayList<>(ownerMap.getOrDefault(ownerUuid, Collections.emptyList()));
+    }
+
+    public synchronized List<TerritoryData> findTerritoriesByMember(String playerUuid) {
+        List<TerritoryData> result = new ArrayList<>();
+        for (List<TerritoryData> territories : ownerMap.values()) {
+            for (TerritoryData td : territories) {
+                for (TerritoryData.MemberEntry member : td.members()) {
+                    if (member.playerUuid().equals(playerUuid) && 
+                        ("admin".equals(member.role()) || "member".equals(member.role()))) {
+                        result.add(td);
+                        break;
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
+    public static net.minecraft.world.phys.Vec3 calculateFallbackSpawn(TerritoryData data, net.minecraft.server.level.ServerLevel level) {
+        double centerX = (data.minX() + data.maxX()) / 2.0 + 0.5;
+        double centerZ = (data.minZ() + data.maxZ()) / 2.0 + 0.5;
+        
+        for (int y = data.maxY(); y >= data.minY(); y--) {
+            var pos = new net.minecraft.core.BlockPos((int) centerX, y, (int) centerZ);
+            var below = pos.below();
+            if (level.getBlockState(below).isSolid() && 
+                level.getBlockState(pos).isAir() && 
+                level.getBlockState(pos.above()).isAir()) {
+                return new net.minecraft.world.phys.Vec3(centerX, y, centerZ);
+            }
+        }
+        
+        return new net.minecraft.world.phys.Vec3(centerX, level.getSeaLevel(), centerZ);
+    }
+
+    public static long calculateArea(TerritoryData data) {
+        return (long) (data.maxX() - data.minX() + 1) * (data.maxZ() - data.minZ() + 1);
     }
 
     public synchronized boolean checkOverlap(String worldKey, int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {

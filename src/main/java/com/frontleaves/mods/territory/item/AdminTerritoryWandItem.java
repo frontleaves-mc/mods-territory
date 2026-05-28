@@ -1,6 +1,8 @@
 package com.frontleaves.mods.territory.item;
 
+import com.frontleaves.mods.territory.client.ClientSelectionState;
 import com.frontleaves.mods.territory.event.WandInteractionHandler;
+import com.frontleaves.mods.territory.network.TerritoryWandSpawnSetPayload;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.InteractionResultHolder;
@@ -11,6 +13,9 @@ import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.api.distmarker.OnlyIn;
+import net.neoforged.neoforge.network.PacketDistributor;
 
 /**
  * 管理员领地选区工具 — 与普通领地工具交互逻辑一致，但：
@@ -32,11 +37,15 @@ public class AdminTerritoryWandItem extends Item {
             Player player = context.getPlayer();
             if (player == null) return InteractionResult.PASS;
 
+            if (player.isShiftKeyDown()) {
+                return this.handleShiftRightClick(player, context.getClickedPos(), true);
+            }
+
             WandInteractionHandler.handleWandInteraction(
                 player,
                 context.getClickedPos(),
                 true,   // isAdminWand
-                player.isShiftKeyDown()
+                false
             );
             return InteractionResult.SUCCESS;
         }
@@ -49,15 +58,32 @@ public class AdminTerritoryWandItem extends Item {
             var hitResult = player.pick(player.blockInteractionRange(), 0f, false);
             if (hitResult.getType() == HitResult.Type.BLOCK) {
                 var blockHit = (BlockHitResult) hitResult;
+                if (player.isShiftKeyDown()) {
+                    var result = this.handleShiftRightClick(player, blockHit.getBlockPos(), true);
+                    return result == InteractionResult.SUCCESS
+                        ? InteractionResultHolder.success(player.getItemInHand(hand))
+                        : InteractionResultHolder.pass(player.getItemInHand(hand));
+                }
                 WandInteractionHandler.handleWandInteraction(
                     player,
                     blockHit.getBlockPos(),
                     true,   // isAdminWand
-                    player.isShiftKeyDown()
+                    false
                 );
                 return InteractionResultHolder.success(player.getItemInHand(hand));
             }
         }
         return InteractionResultHolder.pass(player.getItemInHand(hand));
+    }
+
+    @OnlyIn(Dist.CLIENT)
+    private InteractionResult handleShiftRightClick(Player player, net.minecraft.core.BlockPos pos, boolean isAdminWand) {
+        var state = isAdminWand ? ClientSelectionState.getAdmin() : ClientSelectionState.get();
+        if (state.getPos1() != null) {
+            WandInteractionHandler.handleWandInteraction(player, pos, isAdminWand, true);
+        } else {
+            PacketDistributor.sendToServer(new TerritoryWandSpawnSetPayload(pos, isAdminWand));
+        }
+        return InteractionResult.SUCCESS;
     }
 }
