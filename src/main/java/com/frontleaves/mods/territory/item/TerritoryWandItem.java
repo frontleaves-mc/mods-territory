@@ -1,8 +1,7 @@
 package com.frontleaves.mods.territory.item;
 
-import com.frontleaves.mods.territory.client.ClientSelectionState;
 import com.frontleaves.mods.territory.event.WandInteractionHandler;
-import com.frontleaves.mods.territory.network.TerritoryWandSpawnSetPayload;
+import com.frontleaves.mods.territory.network.TerritoryWandShiftPayload;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.InteractionResultHolder;
@@ -73,12 +72,7 @@ public class TerritoryWandItem extends Item {
 
     @OnlyIn(Dist.CLIENT)
     private InteractionResult handleShiftRightClick(Player player, net.minecraft.core.BlockPos pos, boolean isAdminWand) {
-        var state = isAdminWand ? ClientSelectionState.getAdmin() : ClientSelectionState.get();
-        if (state.getPos1() != null) {
-            WandInteractionHandler.handleWandInteraction(player, pos, isAdminWand, true);
-        } else {
-            PacketDistributor.sendToServer(new TerritoryWandSpawnSetPayload(pos, isAdminWand));
-        }
+        PacketDistributor.sendToServer(new TerritoryWandShiftPayload(pos, isAdminWand));
         return InteractionResult.SUCCESS;
     }
 }

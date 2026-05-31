@@ -45,33 +45,34 @@ public class WandInteractionHandler {
             player.displayClientMessage(
                 Component.translatable("territory.msg.pos2_set", pos.getX(), pos.getY(), pos.getZ())
                     .withStyle(ChatFormatting.GREEN), false);
+
+            PacketDistributor.sendToServer(
+                new SelectionUpdatePayload(
+                    state.getPos1(),
+                    state.getPos2(),
+                    player.level().dimension().location().toString(),
+                    isAdminWand
+                )
+            );
         } else {
             state.setPos2(pos);
             player.displayClientMessage(
                 Component.translatable("territory.msg.pos2_updated", pos.getX(), pos.getY(), pos.getZ())
                     .withStyle(ChatFormatting.GREEN), false);
-        }
 
-        PacketDistributor.sendToServer(
-            new SelectionUpdatePayload(
-                state.getPos1(),
-                state.getPos2(),
-                player.level().dimension().location().toString(),
-                isAdminWand
-            )
-        );
+            PacketDistributor.sendToServer(
+                new SelectionUpdatePayload(
+                    state.getPos1(),
+                    state.getPos2(),
+                    player.level().dimension().location().toString(),
+                    isAdminWand
+                )
+            );
+        }
     }
 
     @SubscribeEvent
     public static void onLeftClickBlock(PlayerInteractEvent.LeftClickBlock event) {
-        ItemStack mainHand = event.getEntity().getMainHandItem();
-        boolean isRegularWand = mainHand.is(Territory.TERRITORY_WAND.get());
-        boolean isAdminWand = mainHand.is(Territory.ADMIN_TERRITORY_WAND.get());
-
-        if (!isRegularWand && !isAdminWand) return;
-
-        event.setCanceled(true);
-        handleWandInteraction(event.getEntity(), event.getPos(), isAdminWand, event.getEntity().isShiftKeyDown());
     }
 
     @SubscribeEvent

@@ -1,9 +1,12 @@
 package com.frontleaves.mods.territory.client;
 
+import com.frontleaves.mods.territory.network.TerritoryNearbySyncPayload;
 import net.minecraft.core.BlockPos;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
 import org.jetbrains.annotations.Nullable;
+
+import java.util.List;
 
 /**
  * Client-only singleton that manages the current territory selection state.
@@ -20,6 +23,7 @@ public class ClientSelectionState {
     private boolean validated = false;
     private long selectionTimestamp = 0;
     private long validationTimestamp = 0;
+    private List<TerritoryNearbySyncPayload.TerritoryBoundary> nearbyTerritories = List.of();
 
     // ── Chasing AABB 动画字段 ──
     private float prevMinX, prevMinY, prevMinZ;
@@ -125,6 +129,14 @@ public class ClientSelectionState {
 
     public long getValidationTimestamp() {
         return validationTimestamp;
+    }
+
+    public List<TerritoryNearbySyncPayload.TerritoryBoundary> getNearbyTerritories() {
+        return nearbyTerritories;
+    }
+
+    public void setNearbyTerritories(List<TerritoryNearbySyncPayload.TerritoryBoundary> list) {
+        this.nearbyTerritories = list;
     }
 
     public boolean isRecentlyValidated() {

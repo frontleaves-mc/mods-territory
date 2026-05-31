@@ -21,12 +21,31 @@ import net.minecraft.world.phys.shapes.VoxelShape;
  */
 public class TerritoryTableBlock extends Block implements EntityBlock {
 
-    public static final DirectionProperty FACING = BlockStateProperties.FACING;
+    public static final DirectionProperty FACING = BlockStateProperties.HORIZONTAL_FACING;
 
-    private static final VoxelShape BASE = Shapes.box(0.0, 0.0, 0.0, 1.0, 0.125, 1.0);
-    private static final VoxelShape PILLAR = Shapes.box(0.25, 0.125, 0.25, 0.75, 0.9375, 0.75);
-    private static final VoxelShape TOP = Shapes.box(0.0, 0.75, 0.1875, 1.0, 1.0, 1.0);
-    private static final VoxelShape SHAPE = Shapes.or(BASE, PILLAR, TOP);
+    private static final VoxelShape NORTH_SHAPE = Shapes.or(
+            Shapes.box(0.0, 0.0, 0.0, 1.0, 0.125, 1.0),
+            Shapes.box(0.25, 0.125, 0.25, 0.75, 0.9375, 0.75),
+            Shapes.box(0.0, 0.75, 0.1875, 1.0, 1.0, 1.0)
+    );
+
+    private static final VoxelShape SOUTH_SHAPE = Shapes.or(
+            Shapes.box(0.0, 0.0, 0.0, 1.0, 0.125, 1.0),
+            Shapes.box(0.25, 0.125, 0.25, 0.75, 0.9375, 0.75),
+            Shapes.box(0.0, 0.75, 0.0, 1.0, 1.0, 0.8125)
+    );
+
+    private static final VoxelShape WEST_SHAPE = Shapes.or(
+            Shapes.box(0.0, 0.0, 0.0, 1.0, 0.125, 1.0),
+            Shapes.box(0.25, 0.125, 0.25, 0.75, 0.9375, 0.75),
+            Shapes.box(0.1875, 0.75, 0.0, 1.0, 1.0, 1.0)
+    );
+
+    private static final VoxelShape EAST_SHAPE = Shapes.or(
+            Shapes.box(0.0, 0.0, 0.0, 1.0, 0.125, 1.0),
+            Shapes.box(0.25, 0.125, 0.25, 0.75, 0.9375, 0.75),
+            Shapes.box(0.0, 0.75, 0.0, 0.8125, 1.0, 1.0)
+    );
 
     public TerritoryTableBlock(Properties properties) {
         super(properties.pushReaction(PushReaction.BLOCK));
@@ -43,24 +62,34 @@ public class TerritoryTableBlock extends Block implements EntityBlock {
         return new TerritoryTableBlockEntity(pos, state);
     }
 
+    private VoxelShape shapeForState(BlockState state) {
+        return switch (state.getValue(FACING)) {
+            case NORTH -> NORTH_SHAPE;
+            case SOUTH -> SOUTH_SHAPE;
+            case WEST -> WEST_SHAPE;
+            case EAST -> EAST_SHAPE;
+            default -> NORTH_SHAPE;
+        };
+    }
+
     @Override
     public VoxelShape getShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
-        return SHAPE;
+        return shapeForState(state);
     }
 
     @Override
     public VoxelShape getCollisionShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
-        return SHAPE;
+        return shapeForState(state);
     }
 
     @Override
     public VoxelShape getInteractionShape(BlockState state, BlockGetter level, BlockPos pos) {
-        return SHAPE;
+        return shapeForState(state);
     }
 
     @Override
     public VoxelShape getOcclusionShape(BlockState state, BlockGetter level, BlockPos pos) {
-        return SHAPE;
+        return shapeForState(state);
     }
 
     @Override

@@ -1,6 +1,8 @@
 package com.frontleaves.mods.territory.client;
 
 import com.frontleaves.mods.territory.Territory;
+import com.frontleaves.mods.territory.config.TerritoryConfig;
+import com.frontleaves.mods.territory.network.TerritoryNearbySyncPayload;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
@@ -22,12 +24,14 @@ import org.jetbrains.annotations.NotNull;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
+import java.util.List;
+
 /**
  * 领地选区线框渲染器 — Create 蓝图风格
  * <p>
  * 使用 3D 实体方块线（QUADS 微型长方体）绘制选区边框，
  * 配合程序化棋盘格面填充 + Chasing AABB 平滑追踪动画。
- * 管理员显示红色，普通用户显示蓝色，验证通过时切换为绿色。
+ * 管理员显示紫色，普通用户显示蓝色，验证通过时切换为绿色，冲突时显示亮红色。
  * </p>
  *
  * @author 筱锋 (xiao_lfeng)
@@ -36,8 +40,10 @@ import org.joml.Vector3f;
 public class TerritoryBoxRenderer {
 
     // ── 颜色常量 ──
-    // 管理员 — 柔化红
-    private static final Vector3f ADMIN_COLOR = new Vector3f(0.85f, 0.35f, 0.4f);
+    // 管理员 — 柔化紫
+    private static final Vector3f ADMIN_COLOR = new Vector3f(0.65f, 0.35f, 0.85f);
+    // 冲突 — 亮红（领地重叠）
+    private static final Vector3f CONFLICT_COLOR = new Vector3f(0.9f, 0.25f, 0.25f);
     // 用户 — 柔化蓝
     private static final Vector3f USER_COLOR = new Vector3f(0.35f, 0.55f, 0.85f);
     // 点指示器 — 柔化黄
@@ -100,9 +106,30 @@ public class TerritoryBoxRenderer {
     );
 
     /**
-     * 根据选区状态返回对应颜色 — 验证通过时切换为绿色
+     * 根据选区状态返回对应颜色 — 优先级：冲突 > 验证通过 > 管理员/用户
      */
     private static Vector3f getColorForState(ClientSelectionState state, boolean isAdmin) {
+        // 冲突检测（最高优先级）
+        if (state.isComplete()) {
+            var nearby = state.getNearbyTerritories();
+            if (!nearby.isEmpty()) {
+                float minX = Math.min(state.getPos1().getX(), state.getPos2().getX());
+                float minY = Math.min(state.getPos1().getY(), state.getPos2().getY());
+                float minZ = Math.min(state.getPos1().getZ(), state.getPos2().getZ());
+                float maxX = Math.max(state.getPos1().getX(), state.getPos2().getX()) + 1;
+                float maxY = Math.max(state.getPos1().getY(), state.getPos2().getY()) + 1;
+                float maxZ = Math.max(state.getPos1().getZ(), state.getPos2().getZ()) + 1;
+
+                for (var boundary : nearby) {
+                    if (minX <= boundary.maxX() + 1 && maxX >= boundary.minX()
+                        && minY <= boundary.maxY() + 1 && maxY >= boundary.minY()
+                        && minZ <= boundary.maxZ() + 1 && maxZ >= boundary.minZ()) {
+                        return CONFLICT_COLOR;
+                    }
+                }
+            }
+        }
+
         if (state.isRecentlyValidated()) {
             return VALIDATED_COLOR;
         }
@@ -164,29 +191,61 @@ public class TerritoryBoxRenderer {
             renderPointIndicator(lineConsumer, matrix, state.getPos1(), POINT_COLOR);
             bufferSource.endBatch(CUBOID_LINE_TYPE);
         } else {
+            // Apply maxRenderSize clamping
+            int maxSize = TerritoryConfig.MAX_RENDER_SIZE.get();
+            float clampedMinX = clampAABB(minX, maxX, maxSize, true);
+            float clampedMaxX = clampAABB(minX, maxX, maxSize, false);
+            float clampedMinY = clampAABB(minY, maxY, maxSize, true);
+            float clampedMaxY = clampAABB(minY, maxY, maxSize, false);
+            float clampedMinZ = clampAABB(minZ, maxZ, maxSize, true);
+            float clampedMaxZ = clampAABB(minZ, maxZ, maxSize, false);
+
             // 检测相机是否在 AABB 内部
             float inflate = INFLATE_OUTSIDE;
-            if (camX >= minX && camX <= maxX &&
-                camY >= minY && camY <= maxY &&
-                camZ >= minZ && camZ <= maxZ) {
+            if (camX >= clampedMinX && camX <= clampedMaxX &&
+                camY >= clampedMinY && camY <= clampedMaxY &&
+                camZ >= clampedMinZ && camZ <= clampedMaxZ) {
                 inflate = INFLATE_INSIDE;
             }
 
             // ── 棋盘格面填充层（背景） ──
             VertexConsumer faceConsumer = bufferSource.getBuffer(CHECKER_FACE_TYPE);
             renderCheckerFaceFill(faceConsumer, matrix,
-                    minX, minY, minZ, maxX, maxY, maxZ,
+                    clampedMinX, clampedMinY, clampedMinZ, clampedMaxX, clampedMaxY, clampedMaxZ,
                     inflate, color);
             bufferSource.endBatch(CHECKER_FACE_TYPE);
 
             // ── 3D 实体方块线层（前景） ──
             VertexConsumer lineConsumer = bufferSource.getBuffer(CUBOID_LINE_TYPE);
-            // 应用 inflate 到边线坐标
-            float eMinX = minX - inflate, eMinY = minY - inflate, eMinZ = minZ - inflate;
-            float eMaxX = maxX + inflate, eMaxY = maxY + inflate, eMaxZ = maxZ + inflate;
+            float eMinX = clampedMinX - inflate, eMinY = clampedMinY - inflate, eMinZ = clampedMinZ - inflate;
+            float eMaxX = clampedMaxX + inflate, eMaxY = clampedMaxY + inflate, eMaxZ = clampedMaxZ + inflate;
             renderBoxEdges(lineConsumer, matrix,
                     eMinX, eMinY, eMinZ, eMaxX, eMaxY, eMaxZ,
-                    color, 220);  // 边线 alpha ≈ 0.86
+                    color, 220);
+            bufferSource.endBatch(CUBOID_LINE_TYPE);
+        }
+
+        // ── 附近领地边界渲染 ──
+        List<TerritoryNearbySyncPayload.TerritoryBoundary> nearby = state.getNearbyTerritories();
+        if (!nearby.isEmpty()) {
+            VertexConsumer nearbyConsumer = bufferSource.getBuffer(CUBOID_LINE_TYPE);
+            int maxSize = TerritoryConfig.MAX_RENDER_SIZE.get();
+            for (var boundary : nearby) {
+                Vector3f nearbyColor = switch (boundary.colorType()) {
+                    case 1 -> ADMIN_COLOR;
+                    case 2 -> new Vector3f(0.35f, 0.75f, 0.35f);
+                    default -> USER_COLOR;
+                };
+                float nMinX = clampAABB(boundary.minX(), boundary.maxX() + 1, maxSize, true);
+                float nMaxX = clampAABB(boundary.minX(), boundary.maxX() + 1, maxSize, false);
+                float nMinY = clampAABB(boundary.minY(), boundary.maxY() + 1, maxSize, true);
+                float nMaxY = clampAABB(boundary.minY(), boundary.maxY() + 1, maxSize, false);
+                float nMinZ = clampAABB(boundary.minZ(), boundary.maxZ() + 1, maxSize, true);
+                float nMaxZ = clampAABB(boundary.minZ(), boundary.maxZ() + 1, maxSize, false);
+                renderBoxEdges(nearbyConsumer, matrix,
+                    nMinX, nMinY, nMinZ, nMaxX, nMaxY, nMaxZ,
+                    nearbyColor, 150);
+            }
             bufferSource.endBatch(CUBOID_LINE_TYPE);
         }
 
@@ -327,13 +386,13 @@ public class TerritoryBoxRenderer {
         // ── 底面 (y = minY, normal = 0, -1, 0) ──
         renderCheckerFace(consumer, matrix,
                 minX, minZ, maxZ,
-                maxX, minZ, minY,
+                maxX, maxZ, minY,
                 r, g, b, 0, -1, 0, cellSize, true);
 
         // ── 顶面 (y = maxY, normal = 0, 1, 0) ──
         renderCheckerFace(consumer, matrix,
                 minX, minZ, maxZ,
-                maxX, minZ, maxY,
+                maxX, maxZ, maxY,
                 r, g, b, 0, 1, 0, cellSize, true);
 
         // ── 前面 (z = maxZ, normal = 0, 0, 1) ──
@@ -436,6 +495,23 @@ public class TerritoryBoxRenderer {
     }
 
     // ── 单点指示器 — 使用 3D cuboid line 渲染十字形标记 ──
+
+    /**
+     * 将 AABB 某一轴的坐标限制在最大渲染尺寸内。
+     * 如果边长超过 maxSize，以中心点为基准截断。
+     *
+     * @param min     最小值
+     * @param max     最大值
+     * @param maxSize 最大允许边长
+     * @param isMin   true 返回截断后的 min，false 返回截断后的 max
+     */
+    private static float clampAABB(float min, float max, int maxSize, boolean isMin) {
+        float size = max - min;
+        if (size <= maxSize) return isMin ? min : max;
+        float center = (min + max) / 2.0f;
+        float halfSize = maxSize / 2.0f;
+        return isMin ? center - halfSize : center + halfSize;
+    }
 
     private static void renderPointIndicator(VertexConsumer consumer, Matrix4f matrix,
             BlockPos pos, Vector3f color) {

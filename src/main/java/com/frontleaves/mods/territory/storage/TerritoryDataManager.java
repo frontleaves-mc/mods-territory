@@ -1,6 +1,7 @@
 package com.frontleaves.mods.territory.storage;
 
 import com.frontleaves.mods.territory.geometry.AABB;
+import com.frontleaves.mods.territory.network.TerritoryNearbySyncPayload;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import org.slf4j.Logger;
@@ -188,6 +189,50 @@ public class TerritoryDataManager {
             }
         }
         return false;
+    }
+
+    /**
+     * 获取指定世界坐标附近的所有领地边界信息。
+     * 使用 AABB 与搜索区域矩形（centerX±radius, centerZ±radius）的重叠检测。
+     *
+     * @param worldKey   世界维度标识
+     * @param centerX    搜索中心 X
+     * @param centerZ    搜索中心 Z
+     * @param radius     搜索半径
+     * @param playerUuid 当前玩家 UUID，用于判断领地是否属于该玩家
+     * @return 附近领地边界列表
+     */
+    public synchronized List<TerritoryNearbySyncPayload.TerritoryBoundary> getTerritoriesNearby(
+            String worldKey, int centerX, int centerZ, int radius, String playerUuid) {
+        List<TerritoryNearbySyncPayload.TerritoryBoundary> result = new ArrayList<>();
+        int searchMinX = centerX - radius;
+        int searchMaxX = centerX + radius;
+        int searchMinZ = centerZ - radius;
+        int searchMaxZ = centerZ + radius;
+
+        for (List<TerritoryData> territories : ownerMap.values()) {
+            for (TerritoryData td : territories) {
+                if (!td.worldKey().equals(worldKey)) continue;
+
+                // AABB 与搜索区域的重叠检测
+                if (td.maxX() < searchMinX || td.minX() > searchMaxX) continue;
+                if (td.maxZ() < searchMinZ || td.minZ() > searchMaxZ) continue;
+
+                byte colorType;
+                if (td.ownerUuid().equals(playerUuid)) {
+                    colorType = 2; // 自有领地 — 绿色
+                } else {
+                    colorType = 0; // 普通领地 — 蓝色
+                }
+
+                result.add(new TerritoryNearbySyncPayload.TerritoryBoundary(
+                    td.minX(), td.minY(), td.minZ(),
+                    td.maxX(), td.maxY(), td.maxZ(),
+                    colorType, td.name()
+                ));
+            }
+        }
+        return result;
     }
 
     private void writeOwnerFile(String ownerUuid, List<TerritoryData> territories) {

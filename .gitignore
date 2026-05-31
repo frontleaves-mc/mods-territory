@@ -25,3 +25,4 @@ src/generated/
 
 ### AI ###
 .omo/
+bin/main

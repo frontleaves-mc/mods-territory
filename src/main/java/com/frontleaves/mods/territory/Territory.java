@@ -6,9 +6,11 @@ import com.frontleaves.mods.territory.block.entity.TerritoryTableBlockEntity;
 import com.frontleaves.mods.territory.command.TerritoryCommand;
 import com.frontleaves.mods.territory.data.ModDataGen;
 import com.frontleaves.mods.territory.item.AdminTerritoryWandItem;
+import com.frontleaves.mods.territory.item.TerritoryTableBlockItem;
 import com.frontleaves.mods.territory.item.TerritoryBookItem;
 import com.frontleaves.mods.territory.item.TerritoryWandItem;
 import com.frontleaves.mods.territory.network.TerritoryPayloads;
+import com.frontleaves.mods.territory.config.TerritoryConfig;
 import com.frontleaves.mods.territory.storage.ServerSelectionCache;
 import com.frontleaves.mods.territory.storage.TerritoryDataManager;
 import com.mojang.logging.LogUtils;
@@ -22,6 +24,7 @@ import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.fml.config.ModConfig;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
@@ -84,12 +87,12 @@ public class Territory {
     // -- Block Items (required for crafting recipes) --
     public static final DeferredItem<net.minecraft.world.item.BlockItem> TERRITORY_TABLE_ITEM = ITEMS.register(
             "territory_table",
-            () -> new net.minecraft.world.item.BlockItem(TERRITORY_TABLE.get(), new net.minecraft.world.item.Item.Properties())
+            () -> new TerritoryTableBlockItem(TERRITORY_TABLE.get(), new net.minecraft.world.item.Item.Properties())
     );
 
     public static final DeferredItem<net.minecraft.world.item.BlockItem> ADMIN_TERRITORY_TABLE_ITEM = ITEMS.register(
             "admin_territory_table",
-            () -> new net.minecraft.world.item.BlockItem(ADMIN_TERRITORY_TABLE.get(), new net.minecraft.world.item.Item.Properties())
+            () -> new TerritoryTableBlockItem(ADMIN_TERRITORY_TABLE.get(), new net.minecraft.world.item.Item.Properties())
     );
 
     // -- Block Entities --
@@ -116,6 +119,8 @@ public class Territory {
     );
 
     public Territory(IEventBus modEventBus, ModContainer modContainer) {
+        modContainer.registerConfig(ModConfig.Type.CLIENT, TerritoryConfig.SPEC);
+
         ITEMS.register(modEventBus);
         BLOCKS.register(modEventBus);
         BLOCK_ENTITIES.register(modEventBus);

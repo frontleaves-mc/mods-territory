@@ -118,6 +118,12 @@ public class TerritoryBookScreen extends Screen {
             guiGraphics.drawCenteredString(this.font,
                 Component.translatable(emptyKey), this.width / 2, listY + 50, 0xAAAAAA);
         } else {
+            int panelX = listX - 5;
+            int panelY = listY - 5;
+            int panelW = 310;
+            int panelH = maxVisible * rowHeight + 10;
+            guiGraphics.fill(panelX, panelY, panelX + panelW, panelY + panelH, 0xE0000000);
+
             for (int i = 0; i < currentList.size() && i < maxVisible; i++) {
                 TerritoryEntry entry = currentList.get(i);
                 int y = listY + i * rowHeight;
@@ -132,7 +138,16 @@ public class TerritoryBookScreen extends Screen {
                 String info = entry.worldKey() + " | " + entry.area() + " m\u00B2";
                 guiGraphics.drawString(this.font, info, listX + 5, y + 15, 0xAAAAAA);
 
-                guiGraphics.drawString(this.font, "[\u4F20]", listX + 270, y + 8, 0x55FF55);
+                int btnX = listX + 260;
+                int btnY = y + 4;
+                int btnW = 40;
+                int btnH = rowHeight - 8;
+                boolean btnHovered = mouseX >= btnX && mouseX <= btnX + btnW && mouseY >= btnY && mouseY <= btnY + btnH;
+                int btnBgColor = btnHovered ? 0xFF33AA33 : 0xFF228822;
+                guiGraphics.fill(btnX, btnY, btnX + btnW, btnY + btnH, btnBgColor);
+                guiGraphics.fill(btnX, btnY, btnX + btnW, btnY + 1, 0xFF55FF55);
+                guiGraphics.fill(btnX, btnY + btnH - 1, btnX + btnW, btnY + btnH, 0xFF55FF55);
+                guiGraphics.drawString(this.font, "\u4F20", btnX + 8, btnY + 4, 0xFFFFFF);
             }
         }
 
@@ -153,8 +168,8 @@ public class TerritoryBookScreen extends Screen {
 
             for (int i = 0; i < currentList.size() && i < maxVisible; i++) {
                 int y = listY + i * rowHeight;
-                if (mouseX >= listX + 250 && mouseX <= listX + 300
-                    && mouseY >= y && mouseY <= y + rowHeight - 2) {
+                if (mouseX >= listX + 260 && mouseX <= listX + 300
+                    && mouseY >= y + 4 && mouseY <= y + rowHeight - 4) {
                     TerritoryEntry entry = currentList.get(i);
                     PacketDistributor.sendToServer(new TerritoryTeleportRequestPayload(entry.uuid()));
                     Minecraft.getInstance().setScreen(null);

@@ -17,6 +17,9 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
+import net.neoforged.neoforge.network.PacketDistributor;
+
+import com.frontleaves.mods.territory.network.SelectionClearPayload;
 
 /**
  * 领地桌事件处理器 — 处理放置、右键确认创建、破坏删除领地。
@@ -102,6 +105,8 @@ public class TerritoryTableHandler {
             selectionBox.maxX(), selectionBox.maxY(), selectionBox.maxZ());
 
         manager.createTerritory(data);
+        ServerSelectionCache.remove(player.getUUID());
+        PacketDistributor.sendToPlayer((ServerPlayer) player, new SelectionClearPayload());
         tableBE.setTerritoryUuid(data.uuid());
 
         player.displayClientMessage(

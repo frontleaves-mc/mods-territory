@@ -3,6 +3,7 @@ package com.frontleaves.mods.territory.network;
 import com.frontleaves.mods.territory.Territory;
 import com.frontleaves.mods.territory.client.ClientSelectionState;
 import com.frontleaves.mods.territory.client.TerritoryBookScreen;
+import com.frontleaves.mods.territory.config.TerritoryConfig;
 import com.frontleaves.mods.territory.geometry.AABB;
 import com.frontleaves.mods.territory.storage.ServerSelectionCache;
 import com.frontleaves.mods.territory.storage.TerritoryData;
@@ -65,6 +66,24 @@ public class TerritoryPayloads {
             TerritoryWandSpawnSetPayload.STREAM_CODEC,
             TerritoryPayloads::handleWandSpawnSet
         );
+
+        registrar.playToServer(
+            TerritoryWandShiftPayload.TYPE,
+            TerritoryWandShiftPayload.STREAM_CODEC,
+            TerritoryPayloads::handleWandShift
+        );
+
+        registrar.playToClient(
+            SelectionClearPayload.TYPE,
+            SelectionClearPayload.STREAM_CODEC,
+            TerritoryPayloads::handleClearSelection
+        );
+
+        registrar.playToClient(
+            TerritoryNearbySyncPayload.TYPE,
+            TerritoryNearbySyncPayload.STREAM_CODEC,
+            TerritoryPayloads::handleNearbySync
+        );
     }
 
     private static void handleSelectionUpdate(SelectionUpdatePayload payload, IPayloadContext context) {
@@ -100,6 +119,14 @@ public class TerritoryPayloads {
         PacketDistributor.sendToPlayer(serverPlayer,
             new SelectionResponsePayload(true, "territory.msg.validated",
                 List.of(String.valueOf(volume))));
+
+        // Sync nearby territory boundaries to the client
+        var manager = TerritoryDataManager.getInstance();
+        String worldKey = payload.dimensionKey();
+        String playerUuid = serverPlayer.getUUID().toString();
+        int syncDistance = TerritoryConfig.SYNC_DISTANCE.get();
+        var nearby = manager.getTerritoriesNearby(worldKey, box.minX(), box.minZ(), syncDistance, playerUuid);
+        PacketDistributor.sendToPlayer(serverPlayer, new TerritoryNearbySyncPayload(nearby));
 
         ServerSelectionCache.put(
             serverPlayer.getUUID(),
@@ -264,6 +291,72 @@ public class TerritoryPayloads {
         territory.spawnY(pos.getY() + 1.0);
         territory.spawnZ(pos.getZ() + 0.5);
 
+        manager.updateTerritory(territory);
+
+        serverPlayer.displayClientMessage(
+            Component.translatable("territory.msg.spawn_set_success", territory.name())
+                .withStyle(ChatFormatting.GREEN), false);
+    }
+
+    private static void handleNearbySync(TerritoryNearbySyncPayload payload, IPayloadContext context) {
+        if (context.player() instanceof net.minecraft.client.player.LocalPlayer) {
+            ClientSelectionState.get().setNearbyTerritories(payload.boundaries());
+            ClientSelectionState.getAdmin().setNearbyTerritories(payload.boundaries());
+        }
+    }
+
+    private static void handleClearSelection(SelectionClearPayload payload, IPayloadContext context) {
+        ClientSelectionState.get().clearSelection();
+        ClientSelectionState.getAdmin().clearSelection();
+    }
+
+    private static void handleWandShift(TerritoryWandShiftPayload payload, IPayloadContext context) {
+        var player = context.player();
+        if (!(player instanceof ServerPlayer serverPlayer)) return;
+
+        BlockPos pos = payload.clickedPos();
+        var manager = TerritoryDataManager.getInstance();
+        String worldKey = serverPlayer.level().dimension().location().toString();
+
+        var territoryOpt = manager.findTerritoryAt(worldKey, pos.getX(), pos.getY(), pos.getZ());
+
+        if (territoryOpt.isEmpty()) {
+            // 不在任何领地内 → 清除选区
+            ServerSelectionCache.remove(serverPlayer.getUUID());
+            PacketDistributor.sendToPlayer(serverPlayer, new SelectionClearPayload());
+            serverPlayer.displayClientMessage(
+                Component.translatable("territory.msg.selection_cleared").withStyle(ChatFormatting.YELLOW), false);
+            return;
+        }
+
+        var territory = territoryOpt.get();
+        String playerUuid = serverPlayer.getUUID().toString();
+        boolean canSetSpawn;
+
+        if (payload.isAdminWand()) {
+            canSetSpawn = true;
+        } else {
+            canSetSpawn = territory.ownerUuid().equals(playerUuid);
+            if (!canSetSpawn) {
+                for (var member : territory.members()) {
+                    if (member.playerUuid().equals(playerUuid) && "admin".equals(member.role())) {
+                        canSetSpawn = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (!canSetSpawn) {
+            serverPlayer.displayClientMessage(
+                Component.translatable("territory.msg.spawn_no_permission").withStyle(ChatFormatting.RED), false);
+            return;
+        }
+
+        // 设置传送点 — 复用与 handleWandSpawnSet 相同的逻辑
+        territory.spawnX(pos.getX() + 0.5);
+        territory.spawnY(pos.getY() + 1.0);
+        territory.spawnZ(pos.getZ() + 0.5);
         manager.updateTerritory(territory);
 
         serverPlayer.displayClientMessage(
