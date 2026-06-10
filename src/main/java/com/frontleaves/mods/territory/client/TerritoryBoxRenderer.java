@@ -2,6 +2,7 @@ package com.frontleaves.mods.territory.client;
 
 import com.frontleaves.mods.territory.Territory;
 import com.frontleaves.mods.territory.config.TerritoryConfig;
+import com.frontleaves.mods.territory.network.TerritoryNearbyRequestPayload;
 import com.frontleaves.mods.territory.network.TerritoryNearbySyncPayload;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.PoseStack;
@@ -20,6 +21,7 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
+import net.neoforged.neoforge.network.PacketDistributor;
 import org.jetbrains.annotations.NotNull;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
@@ -51,6 +53,16 @@ public class TerritoryBoxRenderer {
     // 验证通过 — 柔绿
     private static final Vector3f VALIDATED_COLOR = new Vector3f(0.35f, 0.85f, 0.5f);
 
+    // ── 附近领地颜色 ──
+    // 自己的领地 — 白色偏蓝
+    private static final Vector3f NEARBY_OWN_COLOR      = new Vector3f(0.75f, 0.80f, 0.95f);
+    // 他人领地 — 白色
+    private static final Vector3f NEARBY_OTHER_COLOR     = new Vector3f(0.90f, 0.90f, 0.90f);
+    // 自己的领地(管理员法杖) — 淡紫色
+    private static final Vector3f NEARBY_ADMIN_OWN_COLOR = new Vector3f(0.75f, 0.65f, 0.90f);
+    // 他人领地(管理员法杖) — 淡红色
+    private static final Vector3f NEARBY_ADMIN_COLOR     = new Vector3f(0.85f, 0.60f, 0.65f);
+
     // ── 点指示器 ──
     private static final float POINT_SIZE = 0.15f;
 
@@ -72,8 +84,16 @@ public class TerritoryBoxRenderer {
     private static final float CHECKER_ALPHA_A = 0.12f;        // 棋盘格 A 的 alpha
     private static final float CHECKER_ALPHA_B = 0.04f;        // 棋盘格 B 的 alpha
 
+    // ── 附近领地棋盘格面填充 ──
+    private static final float NEARBY_CHECKER_ALPHA_A = 0.03f;
+    private static final float NEARBY_CHECKER_ALPHA_B = 0.015f;
+    private static final int NEARBY_LINE_ALPHA = 100;
+
     // ── Chasing 动画 ──
     private static final float CHASE_FACTOR = 0.5f;            // 指数衰减系数
+
+    // ── 附近领地请求节流 ──
+    private static long lastNearbyRequestTick = 0;
 
     // ── 自定义 RenderType：3D 实体方块线（QUADS 模式） ──
     private static final RenderType CUBOID_LINE_TYPE = RenderType.create(
@@ -136,6 +156,21 @@ public class TerritoryBoxRenderer {
         return isAdmin ? ADMIN_COLOR : USER_COLOR;
     }
 
+    private static Vector3f getNearbyColor(TerritoryNearbySyncPayload.TerritoryBoundary boundary, boolean isAdminWand) {
+        if (isAdminWand) {
+            return switch (boundary.colorType()) {
+                case 1 -> NEARBY_ADMIN_OWN_COLOR;
+                case 2 -> NEARBY_ADMIN_COLOR;
+                default -> NEARBY_OTHER_COLOR;
+            };
+        } else {
+            return switch (boundary.colorType()) {
+                case 1 -> NEARBY_OWN_COLOR;
+                default -> NEARBY_OTHER_COLOR;
+            };
+        }
+    }
+
     @SubscribeEvent
     public static void onRenderLevel(@NotNull RenderLevelStageEvent event) {
         if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_TRANSLUCENT_BLOCKS) return;
@@ -151,7 +186,71 @@ public class TerritoryBoxRenderer {
         if (!isRegularWand && !isAdminWand) return;
 
         ClientSelectionState state = isAdminWand ? ClientSelectionState.getAdmin() : ClientSelectionState.get();
-        if (state.getPos1() == null) return;
+
+        // ── 节流请求附近领地（每 40 tick ≈ 2s） ──
+        long currentTick = mc.level.getGameTime();
+        if (currentTick - lastNearbyRequestTick >= 40) {
+            lastNearbyRequestTick = currentTick;
+            PacketDistributor.sendToServer(new TerritoryNearbyRequestPayload(
+                    player.level().dimension().location().toString(), isAdminWand));
+        }
+
+        PoseStack poseStack = event.getPoseStack();
+        Camera camera = event.getCamera();
+        double camX = camera.getPosition().x;
+        double camY = camera.getPosition().y;
+        double camZ = camera.getPosition().z;
+        MultiBufferSource.BufferSource bufferSource = mc.renderBuffers().bufferSource();
+
+        poseStack.pushPose();
+        poseStack.translate(-camX, -camY, -camZ);
+        Matrix4f matrix = poseStack.last().pose();
+
+        // ── 附近领地边界渲染 ──
+        List<TerritoryNearbySyncPayload.TerritoryBoundary> nearby = state.getNearbyTerritories();
+        if (!nearby.isEmpty()) {
+            int maxSize = TerritoryConfig.MAX_RENDER_SIZE.get();
+
+            VertexConsumer faceConsumer = bufferSource.getBuffer(CHECKER_FACE_TYPE);
+            for (var boundary : nearby) {
+                Vector3f nearbyColor = getNearbyColor(boundary, isAdminWand);
+
+                float nMinX = clampAABB(boundary.minX(), boundary.maxX() + 1, maxSize, true);
+                float nMaxX = clampAABB(boundary.minX(), boundary.maxX() + 1, maxSize, false);
+                float nMinY = clampAABB(boundary.minY(), boundary.maxY() + 1, maxSize, true);
+                float nMaxY = clampAABB(boundary.minY(), boundary.maxY() + 1, maxSize, false);
+                float nMinZ = clampAABB(boundary.minZ(), boundary.maxZ() + 1, maxSize, true);
+                float nMaxZ = clampAABB(boundary.minZ(), boundary.maxZ() + 1, maxSize, false);
+
+                renderNearbyCheckerFill(faceConsumer, matrix,
+                        nMinX, nMinY, nMinZ, nMaxX, nMaxY, nMaxZ,
+                        INFLATE_OUTSIDE, nearbyColor);
+            }
+            bufferSource.endBatch(CHECKER_FACE_TYPE);
+
+            VertexConsumer lineConsumer = bufferSource.getBuffer(CUBOID_LINE_TYPE);
+            for (var boundary : nearby) {
+                Vector3f nearbyColor = getNearbyColor(boundary, isAdminWand);
+
+                float nMinX = clampAABB(boundary.minX(), boundary.maxX() + 1, maxSize, true);
+                float nMaxX = clampAABB(boundary.minX(), boundary.maxX() + 1, maxSize, false);
+                float nMinY = clampAABB(boundary.minY(), boundary.maxY() + 1, maxSize, true);
+                float nMaxY = clampAABB(boundary.minY(), boundary.maxY() + 1, maxSize, false);
+                float nMinZ = clampAABB(boundary.minZ(), boundary.maxZ() + 1, maxSize, true);
+                float nMaxZ = clampAABB(boundary.minZ(), boundary.maxZ() + 1, maxSize, false);
+
+                float inflate = INFLATE_OUTSIDE;
+                float eMinX = nMinX - inflate, eMinY = nMinY - inflate, eMinZ = nMinZ - inflate;
+                float eMaxX = nMaxX + inflate, eMaxY = nMaxY + inflate, eMaxZ = nMaxZ + inflate;
+                renderBoxEdges(lineConsumer, matrix,
+                        eMinX, eMinY, eMinZ, eMaxX, eMaxY, eMaxZ,
+                        nearbyColor, NEARBY_LINE_ALPHA);
+            }
+            bufferSource.endBatch(CUBOID_LINE_TYPE);
+        }
+
+        // ── 选区渲染（仅当有选区时） ──
+        if (state.getPos1() != null) {
 
         // 驱动 Chasing AABB 动画
         state.tickChasing();
@@ -171,19 +270,6 @@ public class TerritoryBoxRenderer {
         }
 
         Vector3f color = getColorForState(state, isAdminWand);
-
-        PoseStack poseStack = event.getPoseStack();
-        Camera camera = event.getCamera();
-        double camX = camera.getPosition().x;
-        double camY = camera.getPosition().y;
-        double camZ = camera.getPosition().z;
-
-        MultiBufferSource.BufferSource bufferSource = mc.renderBuffers().bufferSource();
-
-        poseStack.pushPose();
-        poseStack.translate(-camX, -camY, -camZ);
-
-        Matrix4f matrix = poseStack.last().pose();
 
         if (!state.isComplete()) {
             // ── 单点指示器（3D cuboid line 十字） ──
@@ -224,30 +310,7 @@ public class TerritoryBoxRenderer {
                     color, 220);
             bufferSource.endBatch(CUBOID_LINE_TYPE);
         }
-
-        // ── 附近领地边界渲染 ──
-        List<TerritoryNearbySyncPayload.TerritoryBoundary> nearby = state.getNearbyTerritories();
-        if (!nearby.isEmpty()) {
-            VertexConsumer nearbyConsumer = bufferSource.getBuffer(CUBOID_LINE_TYPE);
-            int maxSize = TerritoryConfig.MAX_RENDER_SIZE.get();
-            for (var boundary : nearby) {
-                Vector3f nearbyColor = switch (boundary.colorType()) {
-                    case 1 -> ADMIN_COLOR;
-                    case 2 -> new Vector3f(0.35f, 0.75f, 0.35f);
-                    default -> USER_COLOR;
-                };
-                float nMinX = clampAABB(boundary.minX(), boundary.maxX() + 1, maxSize, true);
-                float nMaxX = clampAABB(boundary.minX(), boundary.maxX() + 1, maxSize, false);
-                float nMinY = clampAABB(boundary.minY(), boundary.maxY() + 1, maxSize, true);
-                float nMaxY = clampAABB(boundary.minY(), boundary.maxY() + 1, maxSize, false);
-                float nMinZ = clampAABB(boundary.minZ(), boundary.maxZ() + 1, maxSize, true);
-                float nMaxZ = clampAABB(boundary.minZ(), boundary.maxZ() + 1, maxSize, false);
-                renderBoxEdges(nearbyConsumer, matrix,
-                    nMinX, nMinY, nMinZ, nMaxX, nMaxY, nMaxZ,
-                    nearbyColor, 150);
-            }
-            bufferSource.endBatch(CUBOID_LINE_TYPE);
-        }
+        } // end if (state.getPos1() != null)
 
         poseStack.popPose();
     }
@@ -480,6 +543,96 @@ public class TerritoryBoxRenderer {
                         consumer.addVertex(VEC1.x, VEC1.y, VEC1.z).setColor(r, g, b, alphaInt).setNormal(nx, ny, nz);
                     } else {
                         // Left/right face (x fixed): iterate Z(a) × Y(b)
+                        VEC1.set(fixedVal, b0, a0); matrix.transformPosition(VEC1);
+                        consumer.addVertex(VEC1.x, VEC1.y, VEC1.z).setColor(r, g, b, alphaInt).setNormal(nx, ny, nz);
+                        VEC1.set(fixedVal, b0, a1); matrix.transformPosition(VEC1);
+                        consumer.addVertex(VEC1.x, VEC1.y, VEC1.z).setColor(r, g, b, alphaInt).setNormal(nx, ny, nz);
+                        VEC1.set(fixedVal, b1, a1); matrix.transformPosition(VEC1);
+                        consumer.addVertex(VEC1.x, VEC1.y, VEC1.z).setColor(r, g, b, alphaInt).setNormal(nx, ny, nz);
+                        VEC1.set(fixedVal, b1, a0); matrix.transformPosition(VEC1);
+                        consumer.addVertex(VEC1.x, VEC1.y, VEC1.z).setColor(r, g, b, alphaInt).setNormal(nx, ny, nz);
+                    }
+                }
+            }
+        }
+    }
+
+    // ── 附近领地棋盘格面填充（使用更淡的 alpha） ──
+
+    private static void renderNearbyCheckerFill(VertexConsumer consumer, Matrix4f matrix,
+            float minX, float minY, float minZ,
+            float maxX, float maxY, float maxZ,
+            float inflate, Vector3f color) {
+
+        int r = (int) (color.x() * 255);
+        int g = (int) (color.y() * 255);
+        int b = (int) (color.z() * 255);
+
+        minX -= inflate; minY -= inflate; minZ -= inflate;
+        maxX += inflate; maxY += inflate; maxZ += inflate;
+
+        float cellSize = CHECKER_CELL_SIZE;
+
+        renderNearbyCheckerFace(consumer, matrix,
+                minX, minZ, maxZ, maxX, maxZ, minY,
+                r, g, b, 0, -1, 0, cellSize, true);
+        renderNearbyCheckerFace(consumer, matrix,
+                minX, minZ, maxZ, maxX, maxZ, maxY,
+                r, g, b, 0, 1, 0, cellSize, true);
+        renderNearbyCheckerFace(consumer, matrix,
+                minX, minY, maxY, maxX, maxY, maxZ,
+                r, g, b, 0, 0, 1, cellSize, false);
+        renderNearbyCheckerFace(consumer, matrix,
+                minX, minY, maxY, maxX, maxY, minZ,
+                r, g, b, 0, 0, -1, cellSize, false);
+        renderNearbyCheckerFace(consumer, matrix,
+                minZ, minY, maxY, maxZ, maxY, maxX,
+                r, g, b, 1, 0, 0, cellSize, false);
+        renderNearbyCheckerFace(consumer, matrix,
+                minZ, minY, maxY, maxZ, maxY, minX,
+                r, g, b, -1, 0, 0, cellSize, false);
+    }
+
+    private static void renderNearbyCheckerFace(VertexConsumer consumer, Matrix4f matrix,
+            float startA, float startB, float endB,
+            float endA, float endB2, float fixedVal,
+            int r, int g, int b,
+            float nx, float ny, float nz, float cellSize, boolean isHorizontal) {
+
+        int cellsA = Math.max(1, (int) Math.ceil((endA - startA) / cellSize));
+        int cellsB = Math.max(1, (int) Math.ceil((endB2 - startB) / cellSize));
+
+        for (int ca = 0; ca < cellsA; ca++) {
+            for (int cb = 0; cb < cellsB; cb++) {
+                float a0 = startA + ca * cellSize;
+                float a1 = Math.min(a0 + cellSize, endA);
+                float b0 = startB + cb * cellSize;
+                float b1 = Math.min(b0 + cellSize, endB2);
+
+                boolean isEven = (ca + cb) % 2 == 0;
+                float alpha = isEven ? NEARBY_CHECKER_ALPHA_A : NEARBY_CHECKER_ALPHA_B;
+                int alphaInt = (int) (alpha * 255);
+
+                if (isHorizontal) {
+                    VEC1.set(a0, fixedVal, b0); matrix.transformPosition(VEC1);
+                    consumer.addVertex(VEC1.x, VEC1.y, VEC1.z).setColor(r, g, b, alphaInt).setNormal(nx, ny, nz);
+                    VEC1.set(a1, fixedVal, b0); matrix.transformPosition(VEC1);
+                    consumer.addVertex(VEC1.x, VEC1.y, VEC1.z).setColor(r, g, b, alphaInt).setNormal(nx, ny, nz);
+                    VEC1.set(a1, fixedVal, b1); matrix.transformPosition(VEC1);
+                    consumer.addVertex(VEC1.x, VEC1.y, VEC1.z).setColor(r, g, b, alphaInt).setNormal(nx, ny, nz);
+                    VEC1.set(a0, fixedVal, b1); matrix.transformPosition(VEC1);
+                    consumer.addVertex(VEC1.x, VEC1.y, VEC1.z).setColor(r, g, b, alphaInt).setNormal(nx, ny, nz);
+                } else {
+                    if (nz != 0) {
+                        VEC1.set(a0, b0, fixedVal); matrix.transformPosition(VEC1);
+                        consumer.addVertex(VEC1.x, VEC1.y, VEC1.z).setColor(r, g, b, alphaInt).setNormal(nx, ny, nz);
+                        VEC1.set(a1, b0, fixedVal); matrix.transformPosition(VEC1);
+                        consumer.addVertex(VEC1.x, VEC1.y, VEC1.z).setColor(r, g, b, alphaInt).setNormal(nx, ny, nz);
+                        VEC1.set(a1, b1, fixedVal); matrix.transformPosition(VEC1);
+                        consumer.addVertex(VEC1.x, VEC1.y, VEC1.z).setColor(r, g, b, alphaInt).setNormal(nx, ny, nz);
+                        VEC1.set(a0, b1, fixedVal); matrix.transformPosition(VEC1);
+                        consumer.addVertex(VEC1.x, VEC1.y, VEC1.z).setColor(r, g, b, alphaInt).setNormal(nx, ny, nz);
+                    } else {
                         VEC1.set(fixedVal, b0, a0); matrix.transformPosition(VEC1);
                         consumer.addVertex(VEC1.x, VEC1.y, VEC1.z).setColor(r, g, b, alphaInt).setNormal(nx, ny, nz);
                         VEC1.set(fixedVal, b0, a1); matrix.transformPosition(VEC1);
