@@ -203,7 +203,7 @@ public class TerritoryDataManager {
      * @return 附近领地边界列表
      */
     public synchronized List<TerritoryNearbySyncPayload.TerritoryBoundary> getTerritoriesNearby(
-            String worldKey, int centerX, int centerZ, int radius, String playerUuid) {
+            String worldKey, int centerX, int centerZ, int radius, String playerUuid, boolean isAdminWand) {
         List<TerritoryNearbySyncPayload.TerritoryBoundary> result = new ArrayList<>();
         int searchMinX = centerX - radius;
         int searchMaxX = centerX + radius;
@@ -220,9 +220,11 @@ public class TerritoryDataManager {
 
                 byte colorType;
                 if (td.ownerUuid().equals(playerUuid)) {
-                    colorType = 2; // 自有领地 — 绿色
+                    colorType = 1; // 自己的领地
+                } else if (isAdminWand && td.admin()) {
+                    colorType = 2; // 他人管理员领地
                 } else {
-                    colorType = 0; // 普通领地 — 蓝色
+                    colorType = 0; // 普通他人领地
                 }
 
                 result.add(new TerritoryNearbySyncPayload.TerritoryBoundary(

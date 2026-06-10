@@ -125,7 +125,7 @@ public class TerritoryPayloads {
         String worldKey = payload.dimensionKey();
         String playerUuid = serverPlayer.getUUID().toString();
         int syncDistance = TerritoryConfig.SYNC_DISTANCE.get();
-        var nearby = manager.getTerritoriesNearby(worldKey, box.minX(), box.minZ(), syncDistance, playerUuid);
+        var nearby = manager.getTerritoriesNearby(worldKey, box.minX(), box.minZ(), syncDistance, playerUuid, payload.admin());
         PacketDistributor.sendToPlayer(serverPlayer, new TerritoryNearbySyncPayload(nearby));
 
         ServerSelectionCache.put(

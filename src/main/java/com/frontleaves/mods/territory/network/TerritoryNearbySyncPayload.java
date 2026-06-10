@@ -68,7 +68,7 @@ public record TerritoryNearbySyncPayload(List<TerritoryBoundary> boundaries) imp
      * @param maxX      最大 X 坐标
      * @param maxY      最大 Y 坐标
      * @param maxZ      最大 Z 坐标
-     * @param colorType 颜色类型：0=普通(蓝), 1=管理员(紫), 2=自有(绿)
+     * @param colorType 颜色类型：0=普通他人, 1=自己的领地, 2=他人管理员
      * @param ownerName 领地所有者名称
      */
     public record TerritoryBoundary(int minX, int minY, int minZ, int maxX, int maxY, int maxZ, byte colorType, String ownerName) {
