@@ -119,7 +119,8 @@ public class Territory {
     );
 
     public Territory(IEventBus modEventBus, ModContainer modContainer) {
-        modContainer.registerConfig(ModConfig.Type.CLIENT, TerritoryConfig.SPEC);
+        modContainer.registerConfig(ModConfig.Type.CLIENT, TerritoryConfig.CLIENT_SPEC);
+        modContainer.registerConfig(ModConfig.Type.COMMON, TerritoryConfig.COMMON_SPEC);
 
         ITEMS.register(modEventBus);
         BLOCKS.register(modEventBus);
