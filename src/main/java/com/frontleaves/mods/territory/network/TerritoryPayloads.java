@@ -8,6 +8,8 @@ import com.frontleaves.mods.territory.geometry.AABB;
 import com.frontleaves.mods.territory.storage.ServerSelectionCache;
 import com.frontleaves.mods.territory.storage.TerritoryData;
 import com.frontleaves.mods.territory.storage.TerritoryDataManager;
+import com.frontleaves.mods.territory.network.TerritoryNearbyRequestPayload;
+import com.frontleaves.mods.territory.network.TerritoryNearbySyncPayload;
 import com.frontleaves.mods.territory.util.TeleportCooldownManager;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
@@ -83,6 +85,12 @@ public class TerritoryPayloads {
             TerritoryNearbySyncPayload.TYPE,
             TerritoryNearbySyncPayload.STREAM_CODEC,
             TerritoryPayloads::handleNearbySync
+        );
+
+        registrar.playToServer(
+            TerritoryNearbyRequestPayload.TYPE,
+            TerritoryNearbyRequestPayload.STREAM_CODEC,
+            TerritoryPayloads::handleNearbyRequest
         );
     }
 
@@ -303,6 +311,41 @@ public class TerritoryPayloads {
             ClientSelectionState.get().setNearbyTerritories(payload.boundaries());
             ClientSelectionState.getAdmin().setNearbyTerritories(payload.boundaries());
         }
+    }
+
+    private static void handleNearbyRequest(TerritoryNearbyRequestPayload payload, IPayloadContext context) {
+        var player = context.player();
+        if (!(player instanceof ServerPlayer serverPlayer)) return;
+
+        // 校验手持领地法杖（防止伪造请求）
+        ItemStack mainHand = serverPlayer.getMainHandItem();
+        boolean isAdminWand = mainHand.is(Territory.ADMIN_TERRITORY_WAND.get());
+        boolean isNormalWand = mainHand.is(Territory.TERRITORY_WAND.get());
+        if (!isAdminWand && !isNormalWand) return;
+
+        // 使用服务端追踪的玩家位置（不信任客户端坐标）
+        BlockPos serverPos = serverPlayer.blockPosition();
+        String actualDimension = serverPlayer.level().dimension().location().toString();
+
+        // 校验维度匹配
+        if (!actualDimension.equals(payload.dimensionKey())) return;
+
+        // 校验 isAdminWand 与实际手持物品一致
+        if (payload.isAdminWand() != isAdminWand) return;
+
+        // 查询附近领地
+        var manager = TerritoryDataManager.getInstance();
+        int syncDistance = TerritoryConfig.SYNC_DISTANCE.get();
+        String playerUuid = serverPlayer.getUUID().toString();
+        var nearby = manager.getTerritoriesNearby(actualDimension, serverPos.getX(), serverPos.getZ(),
+            syncDistance, playerUuid, isAdminWand);
+
+        // 截断至最多 64 条
+        if (nearby.size() > 64) {
+            nearby = nearby.subList(0, 64);
+        }
+
+        PacketDistributor.sendToPlayer(serverPlayer, new TerritoryNearbySyncPayload(nearby));
     }
 
     private static void handleClearSelection(SelectionClearPayload payload, IPayloadContext context) {
