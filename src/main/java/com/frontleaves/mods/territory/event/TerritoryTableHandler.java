@@ -102,7 +102,7 @@ public class TerritoryTableHandler {
         String territoryName = player.getName().getString() + "_领地" + (manager.getTerritoriesByOwner(ownerUuid).size() + 1);
         TerritoryData data = TerritoryData.create(ownerUuid, territoryName, worldKey,
             selectionBox.minX(), selectionBox.minY(), selectionBox.minZ(),
-            selectionBox.maxX(), selectionBox.maxY(), selectionBox.maxZ());
+            selectionBox.maxX(), selectionBox.maxY(), selectionBox.maxZ(), false);
 
         manager.createTerritory(data);
         ServerSelectionCache.remove(player.getUUID());

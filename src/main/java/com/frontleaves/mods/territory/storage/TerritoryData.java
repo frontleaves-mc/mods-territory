@@ -17,6 +17,7 @@ public class TerritoryData {
     private String createdAt;
     private List<MemberEntry> members;
     private Map<String, String> flags;
+    private boolean admin;
     private Double spawnX;
     private Double spawnY;
     private Double spawnZ;
@@ -25,7 +26,8 @@ public class TerritoryData {
     }
 
     public static TerritoryData create(String ownerUuid, String name, String worldKey,
-                                       int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
+                                       int minX, int minY, int minZ, int maxX, int maxY, int maxZ,
+                                       boolean admin) {
         TerritoryData data = new TerritoryData();
         data.uuid = UUID.randomUUID().toString();
         data.name = name;
@@ -45,6 +47,7 @@ public class TerritoryData {
         data.flags.put("block.interact", "deny");
         data.flags.put("entity.damage", "deny");
         data.flags.put("entity.interact", "allow");
+        data.admin = admin;
         return data;
     }
 
@@ -75,6 +78,7 @@ public class TerritoryData {
             map.put("spawnY", spawnY);
             map.put("spawnZ", spawnZ);
         }
+        map.put("admin", admin);
         map.put("flags", flags);
 
         return map;
@@ -111,6 +115,8 @@ public class TerritoryData {
             }
         }
 
+        data.admin = getBool(map, "admin", false);
+
         data.flags = new HashMap<>();
         Object flagsObj = map.get("flags");
         if (flagsObj instanceof Map) {
@@ -144,6 +150,17 @@ public class TerritoryData {
             return ((Number) value).doubleValue();
         }
         return null;
+    }
+
+    private static boolean getBool(Map<String, Object> map, String key, boolean defaultValue) {
+        Object value = map.get(key);
+        if (value instanceof Boolean) {
+            return (Boolean) value;
+        }
+        if (value instanceof String) {
+            return Boolean.parseBoolean((String) value);
+        }
+        return defaultValue;
     }
 
     public static class MemberEntry {
@@ -215,4 +232,7 @@ public class TerritoryData {
 
     public Double spawnZ() { return spawnZ; }
     public void spawnZ(Double spawnZ) { this.spawnZ = spawnZ; }
+
+    public boolean admin() { return admin; }
+    public void admin(boolean admin) { this.admin = admin; }
 }
