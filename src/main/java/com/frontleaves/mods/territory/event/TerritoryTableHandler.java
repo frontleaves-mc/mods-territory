@@ -68,6 +68,13 @@ public class TerritoryTableHandler {
             return;
         }
 
+        boolean isAdminTable = state.is(Territory.ADMIN_TERRITORY_TABLE.get());
+        if (isAdminTable && !player.hasPermissions(2)) {
+            player.displayClientMessage(
+                Component.translatable("territory.msg.admin_only").withStyle(ChatFormatting.RED), false);
+            return;
+        }
+
         ServerSelectionCache.SelectionEntry selection = ServerSelectionCache.get(player.getUUID());
         if (selection == null || !selection.validated()) {
             player.displayClientMessage(
@@ -102,7 +109,7 @@ public class TerritoryTableHandler {
         String territoryName = player.getName().getString() + "_领地" + (manager.getTerritoriesByOwner(ownerUuid).size() + 1);
         TerritoryData data = TerritoryData.create(ownerUuid, territoryName, worldKey,
             selectionBox.minX(), selectionBox.minY(), selectionBox.minZ(),
-            selectionBox.maxX(), selectionBox.maxY(), selectionBox.maxZ(), false);
+            selectionBox.maxX(), selectionBox.maxY(), selectionBox.maxZ(), isAdminTable);
 
         manager.createTerritory(data);
         ServerSelectionCache.remove(player.getUUID());
