@@ -1,5 +1,8 @@
 package com.frontleaves.mods.territory.storage;
 
+import com.frontleaves.mods.territory.defense.FlagType;
+import com.frontleaves.mods.territory.defense.TerritoryLogEntry;
+
 import java.time.Instant;
 import java.util.*;
 
@@ -16,11 +19,12 @@ public class TerritoryData {
     private int maxZ;
     private String createdAt;
     private List<MemberEntry> members;
-    private Map<String, String> flags;
+    private Map<String, Object> flags;
     private boolean admin;
     private Double spawnX;
     private Double spawnY;
     private Double spawnZ;
+    private List<TerritoryLogEntry> logs;
 
     public TerritoryData() {
     }
@@ -42,11 +46,15 @@ public class TerritoryData {
         data.createdAt = Instant.now().toString();
         data.members = new ArrayList<>();
         data.flags = new HashMap<>();
-        data.flags.put("block.break", "deny");
-        data.flags.put("block.place", "deny");
-        data.flags.put("block.interact", "deny");
-        data.flags.put("entity.damage", "deny");
-        data.flags.put("entity.interact", "allow");
+        // 默认权限：build、interact、itemdrop、itempickup、move 为 true（允许），其余为 false（拒绝）
+        for (FlagType flagType : FlagType.values()) {
+            data.flags.put(flagType.name(), flagType == FlagType.build
+                    || flagType == FlagType.interact
+                    || flagType == FlagType.itemdrop
+                    || flagType == FlagType.itempickup
+                    || flagType == FlagType.move);
+        }
+        data.logs = new ArrayList<>();
         data.admin = admin;
         return data;
     }
@@ -65,11 +73,14 @@ public class TerritoryData {
         map.put("maxZ", maxZ);
         map.put("createdAt", createdAt);
 
-        List<Map<String, String>> membersList = new ArrayList<>();
+        List<Map<String, Object>> membersList = new ArrayList<>();
         for (MemberEntry member : members) {
-            Map<String, String> memberMap = new HashMap<>();
+            Map<String, Object> memberMap = new HashMap<>();
             memberMap.put("playerUuid", member.playerUuid());
             memberMap.put("role", member.role());
+            if (member.personalFlags() != null) {
+                memberMap.put("personalFlags", member.personalFlags());
+            }
             membersList.add(memberMap);
         }
         map.put("members", membersList);
@@ -80,6 +91,14 @@ public class TerritoryData {
         }
         map.put("admin", admin);
         map.put("flags", flags);
+
+        if (logs != null && !logs.isEmpty()) {
+            List<Map<String, Object>> logsList = new ArrayList<>();
+            for (TerritoryLogEntry log : logs) {
+                logsList.add(log.toMap());
+            }
+            map.put("logs", logsList);
+        }
 
         return map;
     }
@@ -110,7 +129,23 @@ public class TerritoryData {
                     Map<?, ?> memberMap = (Map<?, ?>) memberObj;
                     String playerUuid = memberMap.get("playerUuid") != null ? memberMap.get("playerUuid").toString() : null;
                     String role = memberMap.get("role") != null ? memberMap.get("role").toString() : null;
-                    data.members.add(new MemberEntry(playerUuid, role));
+                    Map<String, Boolean> personalFlags = null;
+                    Object pfObj = memberMap.get("personalFlags");
+                    if (pfObj instanceof Map) {
+                        Map<?, ?> pfRawMap = (Map<?, ?>) pfObj;
+                        personalFlags = new HashMap<>();
+                        for (Map.Entry<?, ?> pfEntry : pfRawMap.entrySet()) {
+                            if (pfEntry.getKey() != null && pfEntry.getValue() != null) {
+                                Object pfValue = pfEntry.getValue();
+                                if (pfValue instanceof Boolean boolVal) {
+                                    personalFlags.put(pfEntry.getKey().toString(), boolVal);
+                                } else if (pfValue instanceof String strVal) {
+                                    personalFlags.put(pfEntry.getKey().toString(), "allow".equalsIgnoreCase(strVal));
+                                }
+                            }
+                        }
+                    }
+                    data.members.add(new MemberEntry(playerUuid, role, personalFlags));
                 }
             }
         }
@@ -123,7 +158,28 @@ public class TerritoryData {
             Map<?, ?> flagsMap = (Map<?, ?>) flagsObj;
             for (Map.Entry<?, ?> entry : flagsMap.entrySet()) {
                 if (entry.getKey() != null && entry.getValue() != null) {
-                    data.flags.put(entry.getKey().toString(), entry.getValue().toString());
+                    Object flagValue = entry.getValue();
+                    if (flagValue instanceof Boolean boolValue) {
+                        data.flags.put(entry.getKey().toString(), boolValue);
+                    } else if (flagValue instanceof String strValue) {
+                        // 向后兼容：旧格式 "deny"/"allow" → Boolean
+                        data.flags.put(entry.getKey().toString(), "allow".equalsIgnoreCase(strValue));
+                    } else {
+                        data.flags.put(entry.getKey().toString(), flagValue);
+                    }
+                }
+            }
+        }
+
+        data.logs = new ArrayList<>();
+        Object logsObj = map.get("logs");
+        if (logsObj instanceof List) {
+            List<?> logsList = (List<?>) logsObj;
+            for (Object logObj : logsList) {
+                if (logObj instanceof Map) {
+                    @SuppressWarnings("unchecked")
+                    TerritoryLogEntry logEntry = TerritoryLogEntry.fromMap((Map<String, Object>) logObj);
+                    data.logs.add(logEntry);
                 }
             }
         }
@@ -166,10 +222,16 @@ public class TerritoryData {
     public static class MemberEntry {
         private final String playerUuid;
         private final String role;
+        private final Map<String, Boolean> personalFlags;
 
         public MemberEntry(String playerUuid, String role) {
+            this(playerUuid, role, null);
+        }
+
+        public MemberEntry(String playerUuid, String role, Map<String, Boolean> personalFlags) {
             this.playerUuid = playerUuid;
             this.role = role;
+            this.personalFlags = personalFlags;
         }
 
         public String playerUuid() {
@@ -178,6 +240,10 @@ public class TerritoryData {
 
         public String role() {
             return role;
+        }
+
+        public Map<String, Boolean> personalFlags() {
+            return personalFlags;
         }
     }
 
@@ -217,8 +283,8 @@ public class TerritoryData {
     public List<MemberEntry> members() { return members; }
     public void members(List<MemberEntry> members) { this.members = members; }
 
-    public Map<String, String> flags() { return flags; }
-    public void flags(Map<String, String> flags) { this.flags = flags; }
+    public Map<String, Object> flags() { return flags; }
+    public void flags(Map<String, Object> flags) { this.flags = flags; }
 
     public boolean hasSpawn() {
         return spawnX != null && spawnY != null && spawnZ != null;
@@ -235,4 +301,12 @@ public class TerritoryData {
 
     public boolean admin() { return admin; }
     public void admin(boolean admin) { this.admin = admin; }
+
+    public List<TerritoryLogEntry> logs() { return logs; }
+    public void logs(List<TerritoryLogEntry> logs) { this.logs = logs; }
+
+    public void addLog(TerritoryLogEntry entry) {
+        if (this.logs == null) this.logs = new ArrayList<>();
+        this.logs.add(entry);
+    }
 }

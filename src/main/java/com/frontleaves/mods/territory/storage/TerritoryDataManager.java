@@ -1,5 +1,7 @@
 package com.frontleaves.mods.territory.storage;
 
+import com.frontleaves.mods.territory.defense.TerritoryLogEntry;
+import com.frontleaves.mods.territory.defense.TerritoryRole;
 import com.frontleaves.mods.territory.geometry.AABB;
 import com.frontleaves.mods.territory.network.TerritoryNearbySyncPayload;
 import com.google.gson.Gson;
@@ -146,8 +148,9 @@ public class TerritoryDataManager {
         for (List<TerritoryData> territories : ownerMap.values()) {
             for (TerritoryData td : territories) {
                 for (TerritoryData.MemberEntry member : td.members()) {
-                    if (member.playerUuid().equals(playerUuid) && 
-                        ("admin".equals(member.role()) || "member".equals(member.role()))) {
+                    if (member.playerUuid().equals(playerUuid) &&
+                        (TerritoryRole.ADMIN.name().toLowerCase().equals(member.role()) ||
+                         TerritoryRole.MEMBER.name().toLowerCase().equals(member.role()))) {
                         result.add(td);
                         break;
                     }
@@ -155,6 +158,100 @@ public class TerritoryDataManager {
             }
         }
         return result;
+    }
+
+    public synchronized void addLog(String territoryUuid, TerritoryLogEntry entry) {
+        for (List<TerritoryData> territories : ownerMap.values()) {
+            for (TerritoryData td : territories) {
+                if (td.uuid().equals(territoryUuid)) {
+                    td.addLog(entry);
+                    writeOwnerFile(td.ownerUuid(), ownerMap.get(td.ownerUuid()));
+                    return;
+                }
+            }
+        }
+    }
+
+    public synchronized List<TerritoryLogEntry> getLogs(String territoryUuid, int limit) {
+        for (List<TerritoryData> territories : ownerMap.values()) {
+            for (TerritoryData td : territories) {
+                if (td.uuid().equals(territoryUuid)) {
+                    List<TerritoryLogEntry> logs = td.logs();
+                    if (logs == null) return Collections.emptyList();
+                    if (logs.size() <= limit) return new ArrayList<>(logs);
+                    return new ArrayList<>(logs.subList(logs.size() - limit, logs.size()));
+                }
+            }
+        }
+        return Collections.emptyList();
+    }
+
+    public synchronized boolean addMember(String territoryUuid, TerritoryData.MemberEntry entry) {
+        for (List<TerritoryData> territories : ownerMap.values()) {
+            for (TerritoryData td : territories) {
+                if (td.uuid().equals(territoryUuid)) {
+                    for (TerritoryData.MemberEntry existing : td.members()) {
+                        if (existing.playerUuid().equals(entry.playerUuid())) {
+                            return false;
+                        }
+                    }
+                    td.members().add(entry);
+                    writeOwnerFile(td.ownerUuid(), ownerMap.get(td.ownerUuid()));
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    public synchronized boolean removeMember(String territoryUuid, String playerUuid) {
+        for (List<TerritoryData> territories : ownerMap.values()) {
+            for (TerritoryData td : territories) {
+                if (td.uuid().equals(territoryUuid)) {
+                    boolean removed = td.members().removeIf(m -> m.playerUuid().equals(playerUuid));
+                    if (removed) {
+                        writeOwnerFile(td.ownerUuid(), ownerMap.get(td.ownerUuid()));
+                    }
+                    return removed;
+                }
+            }
+        }
+        return false;
+    }
+
+    public synchronized boolean setMemberRole(String territoryUuid, String playerUuid, TerritoryRole role) {
+        for (List<TerritoryData> territories : ownerMap.values()) {
+            for (TerritoryData td : territories) {
+                if (td.uuid().equals(territoryUuid)) {
+                    for (TerritoryData.MemberEntry member : td.members()) {
+                        if (member.playerUuid().equals(playerUuid)) {
+                            int idx = td.members().indexOf(member);
+                            if (idx >= 0) {
+                                String roleStr = role.name().toLowerCase();
+                                TerritoryData.MemberEntry updated = new TerritoryData.MemberEntry(
+                                    member.playerUuid(), roleStr, member.personalFlags()
+                                );
+                                td.members().set(idx, updated);
+                                writeOwnerFile(td.ownerUuid(), ownerMap.get(td.ownerUuid()));
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    public synchronized Optional<TerritoryData> findTerritoryByUuid(String uuid) {
+        for (List<TerritoryData> territories : ownerMap.values()) {
+            for (TerritoryData td : territories) {
+                if (td.uuid().equals(uuid)) {
+                    return Optional.of(td);
+                }
+            }
+        }
+        return Optional.empty();
     }
 
     public static net.minecraft.world.phys.Vec3 calculateFallbackSpawn(TerritoryData data, net.minecraft.server.level.ServerLevel level) {

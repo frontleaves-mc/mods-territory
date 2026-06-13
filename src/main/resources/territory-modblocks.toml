@@ -1,0 +1,23 @@
+# Territory Mod Block Registry
+# 格式: "namespace:path" = "FlagType 名称（小写）"
+# FlagType 名称参考 FlagType 枚举值，如: build, destroy, container, interact, button, lever, door 等。
+# 手动配置优先于自动扫描结果。
+#
+# Categories:
+#   BUILD:     build, destroy, place, piston
+#   CONTAINER: container
+#   INTERACT:  interact, button, lever, door, pressure, redstone, craft, bed
+#   ENVIRONMENT: explosion, tnt, creeper, fire, firespread, flow, waterflow, lavaflow, trample, decay
+#   ENTITY:    damage, animal, monster, animalkilling, mobkilling, riding
+#   SPECIAL:   move, pvp, enderpearl, vehicledestroy, itemdrop, itempickup
+
+# ===== Create 模组 =====
+"create:controller_lever" = "lever"
+"create:speed_controller" = "interact"
+"create:mechanical_drill" = "destroy"
+"create:mechanical_saw" = "destroy"
+"create:deployer" = "interact"
+"create:portable_storage_interface" = "container"
+"create:basin" = "container"
+"create:chute" = "container"
+"create:item_vault" = "container"
