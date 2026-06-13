@@ -9,6 +9,8 @@ import com.frontleaves.mods.territory.item.AdminTerritoryWandItem;
 import com.frontleaves.mods.territory.item.TerritoryTableBlockItem;
 import com.frontleaves.mods.territory.item.TerritoryBookItem;
 import com.frontleaves.mods.territory.item.TerritoryWandItem;
+import com.frontleaves.mods.territory.client.TerritoryTableScreen;
+import com.frontleaves.mods.territory.gui.TerritoryTableMenu;
 import com.frontleaves.mods.territory.network.TerritoryPayloads;
 import com.frontleaves.mods.territory.config.TerritoryConfig;
 import com.frontleaves.mods.territory.storage.ServerSelectionCache;
@@ -18,6 +20,8 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.CreativeModeTabs;
+import net.minecraft.world.flag.FeatureFlags;
+import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.material.PushReaction;
 import net.neoforged.bus.api.IEventBus;
@@ -25,6 +29,7 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.config.ModConfig;
+import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
@@ -52,6 +57,7 @@ public class Territory {
     public static final DeferredRegister.Blocks BLOCKS = DeferredRegister.createBlocks(MODID);
     public static final DeferredRegister<BlockEntityType<?>> BLOCK_ENTITIES = DeferredRegister.create(Registries.BLOCK_ENTITY_TYPE, MODID);
     public static final DeferredRegister<CreativeModeTab> CREATIVE_MODE_TABS = DeferredRegister.create(Registries.CREATIVE_MODE_TAB, MODID);
+    public static final DeferredRegister<MenuType<?>> MENU_TYPES = DeferredRegister.create(Registries.MENU, MODID);
 
     // -- Items --
     public static final DeferredItem<TerritoryWandItem> TERRITORY_WAND = ITEMS.register(
@@ -101,6 +107,12 @@ public class Territory {
             () -> BlockEntityType.Builder.of(TerritoryTableBlockEntity::new, TERRITORY_TABLE.get(), ADMIN_TERRITORY_TABLE.get()).build(null)
     );
 
+    // -- Menu Types --
+    public static final DeferredHolder<MenuType<?>, MenuType<TerritoryTableMenu>> TERRITORY_TABLE_MENU = MENU_TYPES.register(
+            "territory_table_menu",
+            () -> new MenuType<>((id, inv) -> new TerritoryTableMenu(id, inv), FeatureFlags.VANILLA_SET)
+    );
+
     // -- Creative Tab --
     public static final DeferredHolder<CreativeModeTab, CreativeModeTab> TERRITORY_TAB = CREATIVE_MODE_TABS.register(
             "territory_tab",
@@ -126,9 +138,11 @@ public class Territory {
         BLOCKS.register(modEventBus);
         BLOCK_ENTITIES.register(modEventBus);
         CREATIVE_MODE_TABS.register(modEventBus);
+        MENU_TYPES.register(modEventBus);
 
         modEventBus.addListener(TerritoryPayloads::register);
         modEventBus.addListener(ModDataGen::generate);
+        modEventBus.addListener(this::registerScreens);
 
         NeoForge.EVENT_BUS.register(this);
     }
@@ -154,5 +168,10 @@ public class Territory {
         TerritoryDataManager.getInstance().shutdown();
         ServerSelectionCache.clear();
         LOGGER.info("Territory system stopped");
+    }
+
+    private void registerScreens(RegisterMenuScreensEvent event) {
+        TerritoryTableMenu.setMenuType(TERRITORY_TABLE_MENU.get());
+        event.register(TERRITORY_TABLE_MENU.get(), TerritoryTableScreen::new);
     }
 }

@@ -1,9 +1,19 @@
 package com.frontleaves.mods.territory.block;
 
 import com.frontleaves.mods.territory.block.entity.TerritoryTableBlockEntity;
+import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.MenuProvider;
+import net.minecraft.world.SimpleMenuProvider;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.BlockGetter;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.EntityBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -12,6 +22,7 @@ import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.DirectionProperty;
 import net.minecraft.world.level.material.PushReaction;
+import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
@@ -60,6 +71,63 @@ public class TerritoryTableBlock extends Block implements EntityBlock {
     @Override
     public BlockEntity newBlockEntity(BlockPos pos, BlockState state) {
         return new TerritoryTableBlockEntity(pos, state);
+    }
+
+    /**
+     * 已绑定领地桌右键 → 路由至 GUI。
+     * <p>未绑定的右键仍由 {@code TerritoryTableHandler} 负责创建领地。</p>
+     */
+    @Override
+    protected InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hit) {
+        if (level.isClientSide()) return InteractionResult.SUCCESS;
+
+        BlockEntity be = level.getBlockEntity(pos);
+        if (be instanceof TerritoryTableBlockEntity tableBE) {
+            String territoryUuid = tableBE.getTerritoryUuid();
+            if (territoryUuid != null) {
+                if (player instanceof ServerPlayer serverPlayer) {
+                    MenuProvider provider = getMenuProvider(state, level, pos);
+                    if (provider != null) {
+                        serverPlayer.openMenu(provider);
+                    } else {
+                        serverPlayer.displayClientMessage(
+                            Component.translatable("territory.gui.page.info").withStyle(ChatFormatting.GREEN),
+                            false
+                        );
+                    }
+                }
+                return InteractionResult.CONSUME;
+            }
+        }
+        return InteractionResult.PASS;
+    }
+
+    /**
+     * 为已绑定领地桌提供 MenuProvider，Task 15 创建 TerritoryTableMenu 后将正式生效。
+     */
+    @Override
+    public MenuProvider getMenuProvider(BlockState state, Level level, BlockPos pos) {
+        BlockEntity be = level.getBlockEntity(pos);
+        if (be instanceof TerritoryTableBlockEntity tableBE) {
+            String territoryUuid = tableBE.getTerritoryUuid();
+            if (territoryUuid != null) {
+                return new SimpleMenuProvider(
+                    (containerId, playerInventory, player) -> new AbstractContainerMenu(null, containerId) {
+                        @Override
+                        public ItemStack quickMoveStack(Player p, int i) {
+                            return ItemStack.EMPTY;
+                        }
+
+                        @Override
+                        public boolean stillValid(Player p) {
+                            return true;
+                        }
+                    },
+                    Component.translatable("territory.gui.table_menu")
+                );
+            }
+        }
+        return null;
     }
 
     private VoxelShape shapeForState(BlockState state) {

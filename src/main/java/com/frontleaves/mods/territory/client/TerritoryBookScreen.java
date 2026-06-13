@@ -92,7 +92,7 @@ public class TerritoryBookScreen extends Screen {
 
     @Override
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
-        this.renderTransparentBackground(guiGraphics);
+        super.render(guiGraphics, mouseX, mouseY, partialTick);
 
         guiGraphics.drawCenteredString(this.font, this.title, this.width / 2, 20, 0xFFFFFF);
 
@@ -153,8 +153,11 @@ public class TerritoryBookScreen extends Screen {
 
         String stats = Component.translatable("gui.territory.book.stats", currentList.size()).getString();
         guiGraphics.drawCenteredString(this.font, stats, this.width / 2, this.height - 30, 0xAAAAAA);
+    }
 
-        super.render(guiGraphics, mouseX, mouseY, partialTick);
+    @Override
+    public void renderBackground(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
+        this.renderTransparentBackground(guiGraphics);
     }
 
     @Override

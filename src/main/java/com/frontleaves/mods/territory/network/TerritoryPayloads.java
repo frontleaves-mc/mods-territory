@@ -3,7 +3,10 @@ package com.frontleaves.mods.territory.network;
 import com.frontleaves.mods.territory.Territory;
 import com.frontleaves.mods.territory.client.ClientSelectionState;
 import com.frontleaves.mods.territory.client.TerritoryBookScreen;
+import com.frontleaves.mods.territory.client.TerritoryTableScreen;
 import com.frontleaves.mods.territory.config.TerritoryConfig;
+import com.frontleaves.mods.territory.defense.TerritoryLogEntry;
+import com.frontleaves.mods.territory.defense.TerritoryRole;
 import com.frontleaves.mods.territory.geometry.AABB;
 import com.frontleaves.mods.territory.storage.ServerSelectionCache;
 import com.frontleaves.mods.territory.storage.TerritoryData;
@@ -91,6 +94,18 @@ public class TerritoryPayloads {
             TerritoryNearbyRequestPayload.TYPE,
             TerritoryNearbyRequestPayload.STREAM_CODEC,
             TerritoryPayloads::handleNearbyRequest
+        );
+
+        registrar.playToServer(
+            TerritoryGuiActionPayload.TYPE,
+            TerritoryGuiActionPayload.STREAM_CODEC,
+            TerritoryPayloads::handleGuiAction
+        );
+
+        registrar.playToClient(
+            TerritoryGuiSyncPayload.TYPE,
+            TerritoryGuiSyncPayload.STREAM_CODEC,
+            TerritoryPayloads::handleGuiSync
         );
     }
 
@@ -419,6 +434,119 @@ public class TerritoryPayloads {
                     : Component.translatable(payload.message(), payload.args().toArray());
             ChatFormatting color = payload.valid() ? ChatFormatting.GREEN : ChatFormatting.RED;
             context.player().displayClientMessage(msg.copy().withStyle(color), false);
+        }
+    }
+
+    private static void handleGuiAction(TerritoryGuiActionPayload payload, IPayloadContext context) {
+        var player = context.player();
+        if (!(player instanceof ServerPlayer serverPlayer)) return;
+
+        var manager = TerritoryDataManager.getInstance();
+        var territoryOpt = manager.findTerritoryByUuid(payload.territoryUuid());
+
+        if (territoryOpt.isEmpty()) return;
+
+        TerritoryData territory = territoryOpt.get();
+        String action = payload.actionType();
+
+        switch (action) {
+            case "SET_FLAG" -> {
+                String flagName = payload.targetData().get("flag");
+                String flagValue = payload.targetData().get("value");
+                if (flagName != null && flagValue != null) {
+                    territory.flags().put(flagName, Boolean.parseBoolean(flagValue));
+                    manager.updateTerritory(territory);
+                    manager.addLog(territory.uuid(), new TerritoryLogEntry(
+                        serverPlayer.getUUID().toString(), "SET_FLAG",
+                        java.time.Instant.now(), flagName + "=" + flagValue
+                    ));
+                }
+            }
+
+            case "ADD_MEMBER" -> {
+                String memberUuid = payload.targetData().get("playerUuid");
+                String role = payload.targetData().get("role");
+                if (memberUuid != null && role != null) {
+                    boolean exists = territory.members().stream()
+                        .anyMatch(m -> m.playerUuid().equals(memberUuid));
+                    if (!exists) {
+                        manager.addMember(territory.uuid(),
+                            new TerritoryData.MemberEntry(memberUuid, role));
+                        manager.addLog(territory.uuid(), new TerritoryLogEntry(
+                            serverPlayer.getUUID().toString(), "ADD_MEMBER",
+                            java.time.Instant.now(), memberUuid + " as " + role
+                        ));
+                    }
+                }
+            }
+
+            case "REMOVE_MEMBER" -> {
+                String removeUuid = payload.targetData().get("playerUuid");
+                if (removeUuid != null && !removeUuid.equals(territory.ownerUuid())) {
+                    manager.removeMember(territory.uuid(), removeUuid);
+                    manager.addLog(territory.uuid(), new TerritoryLogEntry(
+                        serverPlayer.getUUID().toString(), "REMOVE_MEMBER",
+                        java.time.Instant.now(), removeUuid
+                    ));
+                }
+            }
+
+            case "SET_ROLE" -> {
+                String roleUuid = payload.targetData().get("playerUuid");
+                String newRole = payload.targetData().get("role");
+                if (roleUuid != null && newRole != null) {
+                    TerritoryRole tr = TerritoryRole.valueOf(newRole.toUpperCase());
+                    manager.setMemberRole(territory.uuid(), roleUuid, tr);
+                    manager.addLog(territory.uuid(), new TerritoryLogEntry(
+                        serverPlayer.getUUID().toString(), "SET_ROLE",
+                        java.time.Instant.now(), roleUuid + " to " + newRole
+                    ));
+                }
+            }
+
+            case "RENAME" -> {
+                String newName = payload.targetData().get("name");
+                if (newName != null && territory.ownerUuid().equals(serverPlayer.getUUID().toString())) {
+                    territory.name(newName);
+                    manager.updateTerritory(territory);
+                    manager.addLog(territory.uuid(), new TerritoryLogEntry(
+                        serverPlayer.getUUID().toString(), "RENAME",
+                        java.time.Instant.now(), newName
+                    ));
+                }
+            }
+
+            case "DELETE" -> {
+                if (territory.ownerUuid().equals(serverPlayer.getUUID().toString())) {
+                    manager.deleteTerritory(territory.ownerUuid(), territory.uuid());
+                }
+            }
+
+            case "TRANSFER" -> {
+                String newOwnerUuid = payload.targetData().get("newOwnerUuid");
+                if (newOwnerUuid != null && territory.ownerUuid().equals(serverPlayer.getUUID().toString())) {
+                    String oldOwnerUuid = territory.ownerUuid();
+                    territory.ownerUuid(newOwnerUuid);
+                    territory.members().add(new TerritoryData.MemberEntry(oldOwnerUuid, "admin"));
+                    manager.updateTerritory(territory);
+                    manager.addLog(territory.uuid(), new TerritoryLogEntry(
+                        serverPlayer.getUUID().toString(), "TRANSFER",
+                        java.time.Instant.now(), "to " + newOwnerUuid
+                    ));
+                }
+            }
+
+            default -> { /* unknown action */ }
+        }
+    }
+
+    private static void handleGuiSync(TerritoryGuiSyncPayload payload, IPayloadContext context) {
+        if (context.player() instanceof net.minecraft.client.player.LocalPlayer) {
+            net.minecraft.client.Minecraft.getInstance().execute(() -> {
+                if (net.minecraft.client.Minecraft.getInstance().screen instanceof TerritoryTableScreen screen) {
+                    screen.receiveSyncData(payload.pageType(), payload.pageData());
+                }
+            });
         }
     }
 }

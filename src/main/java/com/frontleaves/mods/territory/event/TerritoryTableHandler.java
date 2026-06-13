@@ -63,8 +63,7 @@ public class TerritoryTableHandler {
         }
 
         if (tableBE.getTerritoryUuid() != null) {
-            player.displayClientMessage(
-                Component.translatable("territory.msg.table_already_bound").withStyle(ChatFormatting.RED), false);
+            // 已绑定 → 不拦截，让 Block.useWithoutItem() 处理 GUI 打开
             return;
         }
 
@@ -133,10 +132,21 @@ public class TerritoryTableHandler {
         TerritoryDataManager manager = TerritoryDataManager.getInstance();
         for (TerritoryData td : manager.getAllTerritories()) {
             if (td.uuid().equals(territoryUuid)) {
-                manager.deleteTerritory(td.ownerUuid(), territoryUuid);
                 if (event.getPlayer() instanceof ServerPlayer player) {
+                    String playerUuid = player.getUUID().toString();
+                    if (!td.ownerUuid().equals(playerUuid)) {
+                        event.setCanceled(true);
+                        player.displayClientMessage(
+                            Component.translatable("territory.defend.table_break").withStyle(ChatFormatting.RED),
+                            true
+                        );
+                        return;
+                    }
+                    manager.deleteTerritory(td.ownerUuid(), territoryUuid);
                     player.displayClientMessage(
                         Component.translatable("territory.msg.territory_deleted").withStyle(ChatFormatting.YELLOW), false);
+                } else {
+                    manager.deleteTerritory(td.ownerUuid(), territoryUuid);
                 }
                 break;
             }
