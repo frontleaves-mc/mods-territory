@@ -34,14 +34,21 @@ import java.util.Map;
 public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<TerritoryTableMenu> {
 
     // ===== 布局常量 =====
-    private static final int TAB_WIDTH = 40;
+    private static final int TAB_WIDTH = 50;
     private static final int TAB_HEIGHT = 14;
     private static final int CONTENT_PADDING = 8;
     private static final int LINE_HEIGHT = 12;
     private static final int SECTION_GAP = 6;
 
-    // ===== 标签定义 =====
-    private static final String[] TAB_NAMES = {"INFO", "MEMBERS", "FLAGS", "SETTINGS", "LOGS", "ADMIN"};
+    // ===== 标签定义（翻译键） =====
+    private static final String[] TAB_KEYS = {
+        "territory.gui.page.info",
+        "territory.gui.page.members",
+        "territory.gui.page.flags",
+        "territory.gui.page.settings",
+        "territory.gui.page.logs",
+        "territory.gui.page.admin"
+    };
     private static final int[] TAB_COLORS = {
         0xFF4A90D9,  // INFO — 蓝
         0xFF50C878,  // MEMBERS — 绿
@@ -63,7 +70,7 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
 
     public TerritoryTableScreen(TerritoryTableMenu menu, Inventory playerInventory, Component title) {
         super(menu, playerInventory, title);
-        this.imageWidth = 260;   // 比 MC 标准容器更宽，容纳 6 个标签 + 内容
+        this.imageWidth = 280;   // 比 MC 标准容器更宽，容纳 6 个标签 + 内容
         this.imageHeight = 200;
     }
 
@@ -122,7 +129,7 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
      */
     private void renderPageTabs(GuiGraphics guiGraphics, int x, int y) {
         TerritoryRole role = menu.getPlayerRole();
-        int totalTabs = Math.min(TAB_NAMES.length, getMaxPageForRole(role) + 1);
+        int totalTabs = Math.min(TAB_KEYS.length, getMaxPageForRole(role) + 1);
         int tabStartX = x + (imageWidth - totalTabs * (TAB_WIDTH + 2)) / 2;
 
         for (int i = 0; i < totalTabs; i++) {
@@ -141,8 +148,8 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
                 guiGraphics.fill(tabX, tabY + TAB_HEIGHT - 2, tabX + TAB_WIDTH, tabY + TAB_HEIGHT, 0xFFFFFFFF);
             }
 
-            // 标签文字
-            String label = TAB_NAMES[i];
+            // 标签文字（本地化）
+            Component label = Component.translatable(TAB_KEYS[i]);
             int textWidth = font.width(label);
             guiGraphics.drawString(font, label,
                 tabX + (TAB_WIDTH - textWidth) / 2,
@@ -168,34 +175,37 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
             default -> { /* 未知页面 */ }
         }
 
-        // 底部角色提示
+        // 底部角色提示（本地化角色名 + 标题）
         TerritoryRole role = menu.getPlayerRole();
-        String roleHint = "[" + role.getDisplayName() + "] " + this.title.getString();
+        Component roleHint = Component.literal("[")
+            .append(Component.translatable(role.getTranslationKey()))
+            .append("] ")
+            .append(this.title);
         guiGraphics.drawString(font, roleHint, cx, y + imageHeight - 16, 0x888888);
     }
 
     // ----- INFO 页面 -----
     private void renderInfoPage(GuiGraphics guiGraphics, int x, int y) {
         int ly = y;
-        ly = drawRow(guiGraphics, x, ly, "Name", getString(currentPageData, "name"));
-        ly = drawRow(guiGraphics, x, ly, "Owner", getString(currentPageData, "ownerUuid"));
-        ly = drawRow(guiGraphics, x, ly, "World", getString(currentPageData, "worldKey"));
+        ly = drawRow(guiGraphics, x, ly, "territory.gui.field.name", getString(currentPageData, "name"));
+        ly = drawRow(guiGraphics, x, ly, "territory.gui.field.owner", getString(currentPageData, "ownerUuid"));
+        ly = drawRow(guiGraphics, x, ly, "territory.gui.field.world", getString(currentPageData, "worldKey"));
 
         Object areaObj = currentPageData.get("area");
         String areaStr = areaObj instanceof Number n ? String.valueOf(n.intValue()) : "?";
-        ly = drawRow(guiGraphics, x, ly, "Area", areaStr + " m²");
+        ly = drawRow(guiGraphics, x, ly, "territory.gui.field.area", areaStr + " m²");
 
         Object memberCountObj = currentPageData.get("memberCount");
         String countStr = memberCountObj instanceof Number n ? String.valueOf(n.intValue()) : "0";
-        ly = drawRow(guiGraphics, x, ly, "Members", countStr);
+        ly = drawRow(guiGraphics, x, ly, "territory.gui.field.members", countStr);
 
         ly += SECTION_GAP;
-        ly = drawSectionHeader(guiGraphics, x, ly, "Coordinates");
-        ly = drawRow(guiGraphics, x, ly, "Min",
+        ly = drawSectionHeader(guiGraphics, x, ly, "territory.gui.field.coordinates");
+        ly = drawRow(guiGraphics, x, ly, "territory.gui.field.min",
             getInt(currentPageData, "minX") + ", "
             + getInt(currentPageData, "minY") + ", "
             + getInt(currentPageData, "minZ"));
-        ly = drawRow(guiGraphics, x, ly, "Max",
+        ly = drawRow(guiGraphics, x, ly, "territory.gui.field.max",
             getInt(currentPageData, "maxX") + ", "
             + getInt(currentPageData, "maxY") + ", "
             + getInt(currentPageData, "maxZ"));
@@ -203,21 +213,22 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
         // 出生点
         if (currentPageData.containsKey("spawnX")) {
             ly += SECTION_GAP;
-            ly = drawSectionHeader(guiGraphics, x, ly, "Spawn Point");
+            ly = drawSectionHeader(guiGraphics, x, ly, "territory.gui.field.spawn_point");
             Object sx = currentPageData.get("spawnX");
             Object sy = currentPageData.get("spawnY");
             Object sz = currentPageData.get("spawnZ");
             String spawnStr = (sx != null ? String.format("%.1f", ((Number) sx).doubleValue()) : "?")
                 + ", " + (sy != null ? String.format("%.1f", ((Number) sy).doubleValue()) : "?")
                 + ", " + (sz != null ? String.format("%.1f", ((Number) sz).doubleValue()) : "?");
-            ly = drawRow(guiGraphics, x, ly, "Position", spawnStr);
+            ly = drawRow(guiGraphics, x, ly, "territory.gui.field.position", spawnStr);
         }
 
         // 创建时间
         String createdAt = getString(currentPageData, "createdAt");
         if (createdAt != null && !createdAt.isEmpty()) {
             ly += SECTION_GAP;
-            ly = drawRow(guiGraphics, x, ly, "Created", createdAt.substring(0, Math.min(19, createdAt.length())));
+            ly = drawRow(guiGraphics, x, ly, "territory.gui.field.created",
+                createdAt.substring(0, Math.min(19, createdAt.length())));
         }
     }
 
@@ -226,21 +237,26 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
         boolean canEdit = getBool(currentPageData, "canEdit", false);
         String ownerUuid = getString(currentPageData, "ownerUuid");
 
-        y = drawSectionHeader(guiGraphics, x, y, "Members "
-            + (canEdit ? "[Editable]" : "[Read-only]"));
+        Component header = Component.translatable("territory.gui.field.members")
+            .append(" ")
+            .append(canEdit
+                ? Component.translatable("territory.gui.state.editable")
+                : Component.translatable("territory.gui.state.readonly"));
+        y = drawSectionHeader(guiGraphics, x, y, header);
 
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> members = (List<Map<String, Object>>) currentPageData.get("members");
         if (members == null || members.isEmpty()) {
-            guiGraphics.drawString(font, "(No members)", x + 4, y + 2, 0x888888);
+            guiGraphics.drawString(font, Component.translatable("territory.gui.members.empty"),
+                x + 4, y + 2, 0x888888);
             return;
         }
 
         // 表头
         int headerY = y;
         guiGraphics.fill(x, headerY, x + imageWidth - CONTENT_PADDING * 2, headerY + LINE_HEIGHT + 2, 0xFF2A2A2A);
-        guiGraphics.drawString(font, "UUID", x + 4, headerY + 2, 0xAAAAAA);
-        guiGraphics.drawString(font, "Role", x + 140, headerY + 2, 0xAAAAAA);
+        guiGraphics.drawString(font, Component.translatable("territory.gui.field.uuid"), x + 4, headerY + 2, 0xAAAAAA);
+        guiGraphics.drawString(font, Component.translatable("territory.gui.members.role"), x + 160, headerY + 2, 0xAAAAAA);
 
         int rowY = headerY + LINE_HEIGHT + 4;
         int visibleEnd = Math.min(members.size(), membersScrollOffset + MAX_VISIBLE_ROWS);
@@ -270,11 +286,14 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
             String displayUuid = uuid != null && uuid.length() > 20
                 ? uuid.substring(0, 17) + "..." : (uuid != null ? uuid : "?");
             guiGraphics.drawString(font, displayUuid, x + 4, rowY + 2, 0xFFFFFF);
-            guiGraphics.drawString(font, role != null ? role : "?", x + 140, rowY + 2, roleColor);
+            // 角色名本地化（role 存的是小写 admin/member，对应 territory.role.*）
+            String roleKey = "territory.role." + (role != null ? role.toLowerCase() : "visitor");
+            guiGraphics.drawString(font, Component.translatable(roleKey), x + 160, rowY + 2, roleColor);
 
             // 所有者标记
             if (isOwner) {
-                guiGraphics.drawString(font, "[OWNER]", x + 175, rowY + 2, 0xFFFFD700);
+                guiGraphics.drawString(font, Component.translatable("territory.gui.members.owner_tag"),
+                    x + 210, rowY + 2, 0xFFFFD700);
             }
 
             rowY += LINE_HEIGHT + 2;
@@ -291,8 +310,12 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
     // ----- FLAGS 页面 -----
     private void renderFlagsPage(GuiGraphics guiGraphics, int x, int y, int mouseX, int mouseY) {
         boolean canEdit = getBool(currentPageData, "canEdit", false);
-        y = drawSectionHeader(guiGraphics, x, y, "Permission Flags "
-            + (canEdit ? "[Editable]" : "[Read-only]"));
+        Component header = Component.translatable("territory.gui.field.flags")
+            .append(" ")
+            .append(canEdit
+                ? Component.translatable("territory.gui.state.editable")
+                : Component.translatable("territory.gui.state.readonly"));
+        y = drawSectionHeader(guiGraphics, x, y, header);
 
         int colX = x;
         int categoryTop = y;
@@ -302,10 +325,11 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
             Map<String, Boolean> catFlags = (Map<String, Boolean>) currentPageData.get(cat.name());
             if (catFlags == null) continue;
 
-            // 分类标题
+            // 分类标题（本地化 + emoji）
             int catY = categoryTop;
-            guiGraphics.drawString(font, cat.getDisplayName() + " " + cat.getIcon(),
-                colX, catY, 0xFFCCAA33);
+            Component catLabel = Component.translatable(cat.getTranslationKey())
+                .append(" " + cat.getIcon());
+            guiGraphics.drawString(font, catLabel, colX, catY, 0xFFCCAA33);
             catY += LINE_HEIGHT + 2;
 
             for (FlagType flag : FlagType.getByCategory(cat)) {
@@ -318,8 +342,9 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
                     guiGraphics.fill(colX, catY, colX + 220, catY + LINE_HEIGHT + 1, 0x15FFFFFF);
                 }
 
-                // 标志名称
-                guiGraphics.drawString(font, flag.getDisplayName(), colX + 4, catY + 2, 0xCCCCCC);
+                // 标志名称（本地化）
+                guiGraphics.drawString(font, Component.translatable(flag.getTranslationKey()),
+                    colX + 4, catY + 2, 0xCCCCCC);
 
                 // 开关按钮
                 int toggleX = colX + 170;
@@ -331,7 +356,8 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
                     : (toggleHovered ? 0xFFCC3333 : 0xFFAA2222);
                 guiGraphics.fill(toggleX, catY, toggleX + toggleW, catY + toggleH, toggleColor);
 
-                String stateLabel = value ? " [ON] " : " [OFF]";
+                Component stateLabel = Component.translatable(value
+                    ? "territory.gui.state.on" : "territory.gui.state.off");
                 int stateColor = value ? 0xFF55FF55 : 0xFFFF5555;
                 int labelW = font.width(stateLabel);
                 guiGraphics.drawString(font, stateLabel,
@@ -339,14 +365,14 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
 
                 // 宏标志标记
                 if (flag.isMacro()) {
-                    guiGraphics.drawString(font, "*", colX + 195, catY + 2, 0xFF88FFFF);
+                    guiGraphics.drawString(font, "*", colX + 220, catY + 2, 0xFF88FFFF);
                 }
 
                 catY += LINE_HEIGHT + 2;
             }
 
             // 列偏移：两列布局
-            colX += 230;
+            colX += 245;
             if (colX + 220 > x + imageWidth - CONTENT_PADDING * 2) {
                 colX = x;
                 categoryTop = catY + SECTION_GAP;
@@ -362,26 +388,28 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
         boolean canDelete = getBool(currentPageData, "canDelete", false);
         boolean spawnSet = getBool(currentPageData, "spawnSet", false);
 
-        y = drawSectionHeader(guiGraphics, x, y, "Territory Settings");
+        y = drawSectionHeader(guiGraphics, x, y, "territory.gui.field.settings");
 
-        y = drawRow(guiGraphics, x, y, "Name", getString(currentPageData, "name"));
+        y = drawRow(guiGraphics, x, y, "territory.gui.field.name", getString(currentPageData, "name"));
         if (canRename) {
-            guiGraphics.drawString(font, "(editable)", x + 160, y - LINE_HEIGHT, 0xFF50C878);
+            guiGraphics.drawString(font, Component.translatable("territory.gui.state.editable"),
+                x + 160, y - LINE_HEIGHT, 0xFF50C878);
         }
 
         y += SECTION_GAP;
-        y = drawSectionHeader(guiGraphics, x, y, "Spawn Point");
+        y = drawSectionHeader(guiGraphics, x, y, "territory.gui.field.spawn_point");
         if (spawnSet) {
             Object sx = currentPageData.get("spawnX");
             Object sy = currentPageData.get("spawnY");
             Object sz = currentPageData.get("spawnZ");
-            y = drawRow(guiGraphics, x, y, "Position",
+            y = drawRow(guiGraphics, x, y, "territory.gui.field.position",
                 String.format("%.1f, %.1f, %.1f",
                     sx instanceof Number n ? n.doubleValue() : 0,
                     sy instanceof Number n ? n.doubleValue() : 0,
                     sz instanceof Number n ? n.doubleValue() : 0));
         } else {
-            guiGraphics.drawString(font, "(not set)", x + 4, y + 2, 0x888888);
+            guiGraphics.drawString(font, Component.translatable("territory.gui.state.not_set"),
+                x + 4, y + 2, 0x888888);
             y += LINE_HEIGHT;
         }
 
@@ -389,27 +417,29 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
         if (canDelete) {
             y += SECTION_GAP + 4;
             guiGraphics.fill(x, y, x + imageWidth - CONTENT_PADDING * 2, y + LINE_HEIGHT + 4, 0x44FF0000);
-            guiGraphics.drawString(font, "[!] Delete Territory — OWNER only", x + 4, y + 2, 0xFFCC3333);
+            guiGraphics.drawString(font, Component.translatable("territory.gui.admin.delete_warning"),
+                x + 4, y + 2, 0xFFCC3333);
         }
     }
 
     // ----- LOGS 页面 -----
     private void renderLogsPage(GuiGraphics guiGraphics, int x, int y) {
-        y = drawSectionHeader(guiGraphics, x, y, "Operation Logs");
+        y = drawSectionHeader(guiGraphics, x, y, "territory.gui.field.logs");
 
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> logs = (List<Map<String, Object>>) currentPageData.get("logs");
         if (logs == null || logs.isEmpty()) {
-            guiGraphics.drawString(font, "(No logs)", x + 4, y + 2, 0x888888);
+            guiGraphics.drawString(font, Component.translatable("territory.gui.logs.empty"),
+                x + 4, y + 2, 0x888888);
             return;
         }
 
         // 表头
         int headerY = y;
         guiGraphics.fill(x, headerY, x + imageWidth - CONTENT_PADDING * 2, headerY + LINE_HEIGHT + 2, 0xFF2A2A2A);
-        guiGraphics.drawString(font, "Time", x + 4, headerY + 2, 0xAAAAAA);
-        guiGraphics.drawString(font, "Action", x + 80, headerY + 2, 0xAAAAAA);
-        guiGraphics.drawString(font, "Detail", x + 130, headerY + 2, 0xAAAAAA);
+        guiGraphics.drawString(font, Component.translatable("territory.gui.field.time"), x + 4, headerY + 2, 0xAAAAAA);
+        guiGraphics.drawString(font, Component.translatable("territory.gui.field.action"), x + 80, headerY + 2, 0xAAAAAA);
+        guiGraphics.drawString(font, Component.translatable("territory.gui.field.detail"), x + 150, headerY + 2, 0xAAAAAA);
 
         int rowY = headerY + LINE_HEIGHT + 4;
         int visibleEnd = Math.min(logs.size(), logsScrollOffset + MAX_VISIBLE_ROWS);
@@ -437,7 +467,7 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
 
             guiGraphics.drawString(font, timeShort, x + 4, rowY + 2, 0x888888);
             guiGraphics.drawString(font, action != null ? action : "?", x + 80, rowY + 2, actionColor);
-            guiGraphics.drawString(font, detailShort, x + 130, rowY + 2, 0xCCCCCC);
+            guiGraphics.drawString(font, detailShort, x + 150, rowY + 2, 0xCCCCCC);
 
             rowY += LINE_HEIGHT + 1;
         }
@@ -456,21 +486,29 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
         boolean isOwner = getBool(currentPageData, "isOwner", false);
         boolean isAdminTerritory = getBool(currentPageData, "isAdminTerritory", false);
 
-        y = drawSectionHeader(guiGraphics, x, y, "Administration "
-            + (isOwner ? "[Full Access]" : "[Limited]"));
+        Component header = Component.translatable("territory.gui.page.admin")
+            .append(" ")
+            .append(isOwner
+                ? Component.translatable("territory.gui.admin.full_access")
+                : Component.translatable("territory.gui.admin.limited"));
+        y = drawSectionHeader(guiGraphics, x, y, header);
 
-        y = drawRow(guiGraphics, x, y, "UUID", getString(currentPageData, "uuid"));
-        y = drawRow(guiGraphics, x, y, "Type", isAdminTerritory ? "Admin Territory" : "Normal Territory");
-        y = drawRow(guiGraphics, x, y, "Owner", getString(currentPageData, "ownerUuid"));
+        y = drawRow(guiGraphics, x, y, "territory.gui.field.uuid", getString(currentPageData, "uuid"));
+        y = drawRow(guiGraphics, x, y, "territory.gui.field.type",
+            isAdminTerritory
+                ? Component.translatable("territory.gui.admin.type_admin").getString()
+                : Component.translatable("territory.gui.admin.type_normal").getString());
+        y = drawRow(guiGraphics, x, y, "territory.gui.field.owner", getString(currentPageData, "ownerUuid"));
 
         if (isOwner) {
             y += SECTION_GAP + 4;
             // 转让操作区域
             guiGraphics.fill(x, y, x + imageWidth - CONTENT_PADDING * 2, y + LINE_HEIGHT + 4, 0x44CC8800);
-            guiGraphics.drawString(font, "[!] Transfer Ownership — irreversible!", x + 4, y + 2, 0xFFCC8800);
+            guiGraphics.drawString(font, Component.translatable("territory.gui.admin.transfer_warning"),
+                x + 4, y + 2, 0xFFCC8800);
         } else {
             y += SECTION_GAP;
-            guiGraphics.drawString(font, "Only the OWNER can access admin functions.",
+            guiGraphics.drawString(font, Component.translatable("territory.gui.admin.owner_only"),
                 x + 4, y + 2, 0x888888);
         }
     }
@@ -520,7 +558,7 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
      */
     private boolean handleTabClick(double mouseX, double mouseY, int leftPos, int topPos) {
         TerritoryRole role = menu.getPlayerRole();
-        int totalTabs = Math.min(TAB_NAMES.length, getMaxPageForRole(role) + 1);
+        int totalTabs = Math.min(TAB_KEYS.length, getMaxPageForRole(role) + 1);
         int tabStartX = leftPos + (imageWidth - totalTabs * (TAB_WIDTH + 2)) / 2;
         int tabY = topPos - TAB_HEIGHT + 2;
 
@@ -611,12 +649,9 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
      * @param targetData 目标数据
      */
     private void sendAction(String actionType, Map<String, String> targetData) {
-        // 获取领地 UUID — 从 Menu 的 territory 或缓存中获取
-        String territoryUuid = null;
-        if (menu.getTerritory() != null) {
-            territoryUuid = menu.getTerritory().uuid();
-        } else {
-            // 回退：尝试从数据中获取
+        // 获取领地 UUID — 优先用 Menu 持有的客户端 UUID，回退到缓存数据
+        String territoryUuid = menu.getClientTerritoryUuid();
+        if (territoryUuid == null) {
             territoryUuid = getString(currentPageData, "uuid");
         }
         if (territoryUuid == null) return;
@@ -654,15 +689,20 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
     //  渲染辅助方法
     // ================================================================
 
-    /** 绘制一行键值对，返回下一行 Y 坐标。 */
-    private int drawRow(GuiGraphics g, int x, int y, String key, String value) {
-        g.drawString(font, key + ":", x, y, 0xAAAAAA);
+    /** 绘制一行键值对（键为翻译键），返回下一行 Y 坐标。 */
+    private int drawRow(GuiGraphics g, int x, int y, String keyTranslationKey, String value) {
+        g.drawString(font, Component.translatable(keyTranslationKey).append(":"), x, y, 0xAAAAAA);
         g.drawString(font, value != null ? value : "N/A", x + 80, y, 0xFFFFFF);
         return y + LINE_HEIGHT + 1;
     }
 
-    /** 绘制分区标题，返回下一行 Y 坐标。 */
-    private int drawSectionHeader(GuiGraphics g, int x, int y, String title) {
+    /** 绘制分区标题（翻译键），返回下一行 Y 坐标。 */
+    private int drawSectionHeader(GuiGraphics g, int x, int y, String titleKey) {
+        return drawSectionHeader(g, x, y, Component.translatable(titleKey));
+    }
+
+    /** 绘制分区标题（Component），返回下一行 Y 坐标。 */
+    private int drawSectionHeader(GuiGraphics g, int x, int y, Component title) {
         g.fill(x, y - 2, x + imageWidth - CONTENT_PADDING * 2, y + LINE_HEIGHT + 1, 0xFF333355);
         g.drawString(font, title, x + 4, y, 0xFFCCAA33);
         return y + LINE_HEIGHT + 4;

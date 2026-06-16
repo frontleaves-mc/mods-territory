@@ -3,26 +3,29 @@ package com.frontleaves.mods.territory.defense;
 /**
  * 领地角色枚举。
  * <p>
- * 每个角色拥有独立的显示名称和权限等级。
+ * 每个角色拥有独立的权限等级，显示名称通过 i18n 键
+ * {@code territory.role.<name>} 本地化（见 lang/*.json）。
  * 等级越高的角色，拥有的默认权限越完整。
  */
 public enum TerritoryRole {
 
-    OWNER("拥有者", 4),
-    ADMIN("管理员", 3),
-    MEMBER("成员", 2),
-    VISITOR("访客", 1);
+    OWNER(4),
+    ADMIN(3),
+    MEMBER(2),
+    VISITOR(1);
 
-    private final String displayName;
     private final int level;
 
-    TerritoryRole(String displayName, int level) {
-        this.displayName = displayName;
+    TerritoryRole(int level) {
         this.level = level;
     }
 
-    public String getDisplayName() {
-        return displayName;
+    /**
+     * 获取本角色对应的 i18n 翻译键。
+     * <p>调用方应使用 {@code Component.translatable(role.getTranslationKey())} 渲染。
+     */
+    public String getTranslationKey() {
+        return "territory.role." + name().toLowerCase();
     }
 
     public int getLevel() {

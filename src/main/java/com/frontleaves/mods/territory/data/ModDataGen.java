@@ -13,8 +13,8 @@ public class ModDataGen {
         event.createProvider((output, lookupProvider) -> new ModRecipeProvider(output, lookupProvider));
         event.createProvider((output, lookupProvider) -> new ModLootTableProvider(output, lookupProvider));
 
-        // 客户端数据：语言文件（中英文）
-        event.createProvider(ModZhCnLanguageProvider::new);
-        event.createProvider(ModEnUsLanguageProvider::new);
+        // 注：语言文件（中英文）采用手写 lang/*.json 维护，不走 datagen。
+        // 历史上 datagen 仅生成 8 个键的残缺文件，构建时因 duplicatesStrategy=INCLUDE
+        // 覆盖了手写的完整 lang 文件，导致游戏内大面积显示键名。详见 build.gradle。
     }
 }

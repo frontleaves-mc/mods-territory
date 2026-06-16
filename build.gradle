@@ -98,7 +98,9 @@ neoForge {
 sourceSets.main.resources { srcDir 'src/generated/resources' }
 
 tasks.withType(ProcessResources).configureEach {
-    duplicatesStrategy = DuplicatesStrategy.INCLUDE
+    // 使用 EXCLUDE 策略：同名资源只保留首个（src/main/resources 优先于 src/generated/resources），
+    // 避免残缺的 datagen lang 文件覆盖手写完整版。
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
 
 
