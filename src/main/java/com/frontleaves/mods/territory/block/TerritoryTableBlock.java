@@ -1,6 +1,8 @@
 package com.frontleaves.mods.territory.block;
 
 import com.frontleaves.mods.territory.block.entity.TerritoryTableBlockEntity;
+import com.frontleaves.mods.territory.defense.TerritoryPermissionService;
+import com.frontleaves.mods.territory.defense.TerritoryRole;
 import com.frontleaves.mods.territory.gui.TerritoryTableMenu;
 import com.frontleaves.mods.territory.storage.TerritoryData;
 import com.frontleaves.mods.territory.storage.TerritoryDataManager;
@@ -89,18 +91,30 @@ public class TerritoryTableBlock extends Block implements EntityBlock {
         BlockEntity be = level.getBlockEntity(pos);
         if (be instanceof TerritoryTableBlockEntity tableBE) {
             String territoryUuid = tableBE.getTerritoryUuid();
-            if (territoryUuid != null) {
-                if (player instanceof ServerPlayer serverPlayer) {
-                    MenuProvider provider = getMenuProvider(state, level, pos);
-                    if (provider != null) {
-                        serverPlayer.openMenu(provider);
-                    } else {
-                        serverPlayer.displayClientMessage(
-                            Component.translatable("territory.gui.page.info").withStyle(ChatFormatting.GREEN),
-                            false
-                        );
-                    }
+            if (territoryUuid != null && player instanceof ServerPlayer serverPlayer) {
+                // 解析领地与角色 — 服务端权威计算，客户端通过 buffer 同步
+                Optional<TerritoryData> territoryOpt = TerritoryDataManager.getInstance()
+                    .findTerritoryByUuid(territoryUuid);
+                if (territoryOpt.isEmpty()) {
+                    serverPlayer.displayClientMessage(
+                        Component.translatable("territory.msg.gui_not_bound").withStyle(ChatFormatting.RED),
+                        false
+                    );
+                    return InteractionResult.CONSUME;
                 }
+                TerritoryData territory = territoryOpt.get();
+                TerritoryRole role = TerritoryPermissionService.getPlayerRole(serverPlayer, territory);
+
+                // 使用 ExtendedMenuType：openMenu 第二参数写入 territoryUuid + role.name()
+                // 客户端 Menu 构造器按相同顺序读出。
+                serverPlayer.openMenu(new SimpleMenuProvider(
+                    (containerId, playerInventory, p) -> new TerritoryTableMenu(
+                        containerId, playerInventory, territory, serverPlayer),
+                    Component.translatable("territory.gui.table_menu")
+                ), buf -> {
+                    buf.writeUtf(territoryUuid);
+                    buf.writeUtf(role.name());
+                });
                 return InteractionResult.CONSUME;
             }
         }
@@ -108,8 +122,9 @@ public class TerritoryTableBlock extends Block implements EntityBlock {
     }
 
     /**
-     * 为已绑定领地桌提供 MenuProvider，打开真正的 TerritoryTableMenu。
-     * <p>通过 SimpleMenuProvider 在打开时实例化 Menu，领地数据由服务端构造器注入。
+     * 保留兼容性 MenuProvider（部分外部调用可能使用）。
+     * <p>实际 GUI 打开走 {@link #useWithoutItem} 中的 ExtendedMenuType 路径，
+     * 此方法仅返回一个基础 provider，不写入额外 buffer。
      */
     @Override
     public MenuProvider getMenuProvider(BlockState state, Level level, BlockPos pos) {
@@ -122,7 +137,6 @@ public class TerritoryTableBlock extends Block implements EntityBlock {
                         Optional<TerritoryData> territoryOpt = TerritoryDataManager.getInstance()
                             .findTerritoryByUuid(territoryUuid);
                         if (territoryOpt.isEmpty() || !(player instanceof ServerPlayer serverPlayer)) {
-                            // 兜底：领地不存在或玩家类型不符时返回占位 Menu（仍需满足工厂签名）
                             return new TerritoryTableMenu(containerId, playerInventory);
                         }
                         return new TerritoryTableMenu(containerId, playerInventory,

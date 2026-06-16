@@ -6,6 +6,7 @@ import com.frontleaves.mods.territory.client.TerritoryBookScreen;
 import com.frontleaves.mods.territory.client.TerritoryTableScreen;
 import com.frontleaves.mods.territory.config.TerritoryConfig;
 import com.frontleaves.mods.territory.defense.TerritoryLogEntry;
+import com.frontleaves.mods.territory.defense.TerritoryPermissionService;
 import com.frontleaves.mods.territory.defense.TerritoryRole;
 import com.frontleaves.mods.territory.geometry.AABB;
 import com.frontleaves.mods.territory.gui.TerritoryBookMenu;
@@ -159,17 +160,18 @@ public class TerritoryPayloads {
         var player = context.player();
         if (!(player instanceof ServerPlayer serverPlayer)) return;
 
+        String playerUuid = serverPlayer.getUUID().toString();
+        // 使用 ExtendedMenuType：openMenu 第二参数写入 playerUuid，客户端构造器同步读取
         serverPlayer.openMenu(new SimpleMenuProvider(
             (containerId, playerInventory, p) -> new TerritoryBookMenu(containerId, playerInventory, serverPlayer),
             Component.translatable("gui.territory.book.title")
-        ));
+        ), buf -> buf.writeUtf(playerUuid));
 
-        // 容器建立后推送列表数据（延迟一 tick，确保 Menu 已注册到玩家）
-        serverPlayer.server.execute(() -> {
-            if (serverPlayer.containerMenu instanceof TerritoryBookMenu bookMenu) {
-                bookMenu.syncBookList();
-            }
-        });
+        // 容器建立后立即同步列表数据。
+        // openMenu 是同步的，返回时 containerMenu 已切换为 TerritoryBookMenu，无需延迟一 tick。
+        if (serverPlayer.containerMenu instanceof TerritoryBookMenu bookMenu) {
+            bookMenu.syncBookList();
+        }
     }
 
     private static void handleTeleportRequest(TerritoryTeleportRequestPayload payload, IPayloadContext context) {
@@ -225,14 +227,36 @@ public class TerritoryPayloads {
         }
 
         net.minecraft.world.phys.Vec3 destination;
+        net.minecraft.server.level.ServerLevel targetLevel = serverPlayer.serverLevel();
         if (target.hasSpawn()) {
             destination = new net.minecraft.world.phys.Vec3(target.spawnX(), target.spawnY(), target.spawnZ());
         } else {
-            var serverLevel = serverPlayer.serverLevel();
-            destination = TerritoryDataManager.calculateFallbackSpawn(target, serverLevel);
+            destination = TerritoryDataManager.calculateFallbackSpawn(target, targetLevel);
         }
 
-        serverPlayer.teleportTo(destination.x, destination.y, destination.z);
+        // 跨维度校验：teleportTo(double,double,double) 不会跨维度，需显式切换。
+        String currentDim = serverPlayer.level().dimension().location().toString();
+        if (!target.worldKey().equals(currentDim)) {
+            // 解析目标维度 ServerLevel
+            var targetDimKey = net.minecraft.resources.ResourceKey.create(
+                net.minecraft.core.registries.Registries.DIMENSION,
+                net.minecraft.resources.ResourceLocation.parse(target.worldKey()));
+            net.minecraft.server.level.ServerLevel resolved =
+                serverPlayer.server.getLevel(targetDimKey);
+            if (resolved == null) {
+                serverPlayer.displayClientMessage(
+                    Component.translatable("territory.msg.teleport_not_found")
+                        .withStyle(ChatFormatting.RED), false);
+                return;
+            }
+            targetLevel = resolved;
+            // 使用 teleportTo(ServerLevel, x, y, z, yRot, xRot) 重载完成跨维度传送
+            serverPlayer.teleportTo(targetLevel, destination.x, destination.y, destination.z,
+                serverPlayer.getYRot(), serverPlayer.getXRot());
+        } else {
+            // 同维度直接传送
+            serverPlayer.teleportTo(destination.x, destination.y, destination.z);
+        }
         cooldownMgr.setCooldown(playerUuid, 30);
 
         serverPlayer.displayClientMessage(
@@ -422,6 +446,24 @@ public class TerritoryPayloads {
 
         TerritoryData territory = territoryOpt.get();
         String action = payload.actionType();
+        String playerUuid = serverPlayer.getUUID().toString();
+
+        // ===== 服务端权威权限校验（不信任客户端）=====
+        TerritoryRole callerRole = TerritoryPermissionService.getPlayerRoleByUuid(territory, playerUuid);
+        boolean needsWrite = java.util.Set.of("SET_FLAG", "ADD_MEMBER", "REMOVE_MEMBER", "SET_ROLE").contains(action);
+        if (needsWrite && !callerRole.isAtLeast(TerritoryRole.ADMIN)) {
+            serverPlayer.displayClientMessage(
+                Component.translatable("territory.msg.no_permission")
+                    .withStyle(ChatFormatting.RED), false);
+            return;
+        }
+        boolean needsOwner = java.util.Set.of("RENAME", "DELETE", "TRANSFER").contains(action);
+        if (needsOwner && callerRole != TerritoryRole.OWNER) {
+            serverPlayer.displayClientMessage(
+                Component.translatable("territory.msg.no_permission")
+                    .withStyle(ChatFormatting.RED), false);
+            return;
+        }
 
         switch (action) {
             case "SET_FLAG" -> {
@@ -467,41 +509,54 @@ public class TerritoryPayloads {
 
             case "SET_ROLE" -> {
                 String roleUuid = payload.targetData().get("playerUuid");
-                String newRole = payload.targetData().get("role");
-                if (roleUuid != null && newRole != null) {
-                    TerritoryRole tr = TerritoryRole.valueOf(newRole.toUpperCase());
-                    manager.setMemberRole(territory.uuid(), roleUuid, tr);
-                    manager.addLog(territory.uuid(), new TerritoryLogEntry(
-                        serverPlayer.getUUID().toString(), "SET_ROLE",
-                        java.time.Instant.now(), roleUuid + " to " + newRole
-                    ));
+                String newRoleStr = payload.targetData().get("role");
+                if (roleUuid != null && newRoleStr != null && !roleUuid.equals(territory.ownerUuid())) {
+                    try {
+                        TerritoryRole newRole = TerritoryRole.valueOf(newRoleStr.toUpperCase());
+                        // 只有不低于目标角色等级、且目标非 OWNER 时才允许设置
+                        if (callerRole.isAtLeast(newRole) && newRole != TerritoryRole.OWNER) {
+                            manager.setMemberRole(territory.uuid(), roleUuid, newRole);
+                            manager.addLog(territory.uuid(), new TerritoryLogEntry(
+                                serverPlayer.getUUID().toString(), "SET_ROLE",
+                                java.time.Instant.now(), roleUuid + " to " + newRoleStr
+                            ));
+                        }
+                    } catch (IllegalArgumentException ignored) {
+                        // 无效角色名
+                    }
                 }
             }
 
             case "RENAME" -> {
                 String newName = payload.targetData().get("name");
-                if (newName != null && territory.ownerUuid().equals(serverPlayer.getUUID().toString())) {
-                    territory.name(newName);
+                if (newName != null && !newName.isBlank()) {
+                    territory.name(newName.trim());
                     manager.updateTerritory(territory);
                     manager.addLog(territory.uuid(), new TerritoryLogEntry(
                         serverPlayer.getUUID().toString(), "RENAME",
-                        java.time.Instant.now(), newName
+                        java.time.Instant.now(), newName.trim()
                     ));
                 }
             }
 
             case "DELETE" -> {
-                if (territory.ownerUuid().equals(serverPlayer.getUUID().toString())) {
-                    manager.deleteTerritory(territory.ownerUuid(), territory.uuid());
-                }
+                manager.deleteTerritory(territory.ownerUuid(), territory.uuid());
+                serverPlayer.closeContainer();
             }
 
             case "TRANSFER" -> {
-                String newOwnerUuid = payload.targetData().get("newOwnerUuid");
-                if (newOwnerUuid != null && territory.ownerUuid().equals(serverPlayer.getUUID().toString())) {
+                // 键名统一为 targetUuid（与 TerritoryTableScreen.sendAction 一致）
+                String newOwnerUuid = payload.targetData().get("targetUuid");
+                if (newOwnerUuid != null) {
                     String oldOwnerUuid = territory.ownerUuid();
                     territory.ownerUuid(newOwnerUuid);
-                    territory.members().add(new TerritoryData.MemberEntry(oldOwnerUuid, "admin"));
+                    boolean alreadyMember = territory.members().stream()
+                        .anyMatch(m -> m.playerUuid().equals(oldOwnerUuid));
+                    if (!alreadyMember) {
+                        manager.addMember(territory.uuid(),
+                            new TerritoryData.MemberEntry(oldOwnerUuid, "admin"));
+                    }
+                    manager.removeMember(territory.uuid(), newOwnerUuid);
                     manager.updateTerritory(territory);
                     manager.addLog(territory.uuid(), new TerritoryLogEntry(
                         serverPlayer.getUUID().toString(), "TRANSFER",

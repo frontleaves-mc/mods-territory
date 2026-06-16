@@ -6,11 +6,10 @@ import com.frontleaves.mods.territory.defense.FlagType;
 import com.frontleaves.mods.territory.defense.TerritoryLogEntry;
 import com.frontleaves.mods.territory.defense.TerritoryPermissionService;
 import com.frontleaves.mods.territory.defense.TerritoryRole;
-import com.frontleaves.mods.territory.network.TerritoryGuiActionPayload;
 import com.frontleaves.mods.territory.network.TerritoryGuiSyncPayload;
 import com.frontleaves.mods.territory.storage.TerritoryData;
 import com.frontleaves.mods.territory.storage.TerritoryDataManager;
-import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
@@ -18,7 +17,6 @@ import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.item.ItemStack;
 
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -29,8 +27,9 @@ import net.neoforged.neoforge.network.PacketDistributor;
 /**
  * 领地管理桌 GUI — 服务端 Container Menu。
  * <p>
- * 管理 6 页面（INFO / MEMBERS / FLAGS / SETTINGS / LOGS / ADMIN）的数据同步与操作处理，
- * 接收客户端 {@link TerritoryGuiActionPayload} 并通过 {@link TerritoryGuiSyncPayload} 向客户端推送页面数据。
+ * 管理 6 页面（INFO / MEMBERS / FLAGS / SETTINGS / LOGS / ADMIN）的数据同步，
+ * 客户端 GUI 操作通过 {@link TerritoryGuiActionPayload}（在 {@code TerritoryPayloads.handleGuiAction}）
+ * 直接处理，本类仅负责服务端数据构建与 {@link TerritoryGuiSyncPayload} 推送。
  * <p>
  * 角色可见性规则：
  * <ul>
@@ -56,32 +55,51 @@ public class TerritoryTableMenu extends AbstractContainerMenu {
     private static final int MAX_LOG_ENTRIES = 50;
 
     // ===== 状态字段 =====
+    /** 服务端持有的领地数据；客户端为 {@code null}。 */
     private final TerritoryData territory;
-    private final TerritoryRole playerRole;
+    /**
+     * 当前玩家在此领地中的角色。
+     * <p>服务端由 {@link TerritoryPermissionService#getPlayerRole} 计算；
+     * 客户端由 ExtendedMenuType setup buffer 注入（见 {@link Territory#TERRITORY_TABLE_MENU}）。
+     */
+    private TerritoryRole playerRole;
     private final ServerPlayer serverPlayer;
+    /** 客户端侧领地 UUID（由 ExtendedMenuType setup buffer 注入）。 */
+    private String clientTerritoryUuid;
     private int currentPage = PAGE_INFO;
 
     /**
-     * MenuType 工厂构造器：由 MenuType 注册时的 lambda 调用。
-     * <p>客户端侧占位，实际数据由 S→C sync payload 填充。
+     * 客户端构造器：从 {@link RegistryFriendlyByteBuf} 读取服务端写入的领地 UUID 与角色，
+     * 由 {@code IMenuTypeExtension.create} 在客户端打开容器时调用。
+     * <p>读取顺序必须与服务端 {@code openMenu(provider, buf -> ...)} 的写入顺序严格一致：
+     * 先 territoryUuid，再 role.name()。
+     *
+     * @param containerId     容器 ID
+     * @param playerInventory 玩家背包
+     * @param data            服务端写入的额外数据（territoryUuid + role）
+     */
+    public TerritoryTableMenu(int containerId, Inventory playerInventory, RegistryFriendlyByteBuf data) {
+        super(getMenuType(), containerId);
+        this.territory = null;
+        this.serverPlayer = null;
+        this.clientTerritoryUuid = data.readUtf();
+        try {
+            this.playerRole = TerritoryRole.valueOf(data.readUtf());
+        } catch (IllegalArgumentException ex) {
+            // 非法角色名 — 降级为访客，避免客户端崩溃
+            this.playerRole = TerritoryRole.VISITOR;
+        }
+    }
+
+    /**
+     * 占位构造器：仅用于领地不存在或玩家类型不符时的兜底。
+     * <p>不通过 MenuType 工厂调用，角色固定为 {@link TerritoryRole#VISITOR}。
      */
     public TerritoryTableMenu(int containerId, Inventory playerInventory) {
         super(getMenuType(), containerId);
         this.territory = null;
         this.serverPlayer = null;
         this.playerRole = TerritoryRole.VISITOR;
-    }
-
-    /**
-     * 客户端构造器：从网络缓冲区读取领地 UUID。
-     * <p>实际数据由 S→C 同步包填充，此处仅占位。
-     */
-    public TerritoryTableMenu(int containerId, Inventory playerInventory, FriendlyByteBuf buffer) {
-        super(getMenuType(), containerId);
-        this.territory = null;      // 由 sync payload 填充
-        this.serverPlayer = null;   // 客户端无服务端引用
-        this.playerRole = TerritoryRole.VISITOR;
-        buffer.readUtf(); // territoryUuid，保留读取以维持 buf 位置
     }
 
     /**
@@ -97,6 +115,7 @@ public class TerritoryTableMenu extends AbstractContainerMenu {
         super(getMenuType(), containerId);
         this.territory = territory;
         this.serverPlayer = serverPlayer;
+        this.clientTerritoryUuid = territory.uuid();
         this.playerRole = TerritoryPermissionService.getPlayerRole(serverPlayer, territory);
     }
 
@@ -133,158 +152,20 @@ public class TerritoryTableMenu extends AbstractContainerMenu {
     /** 获取绑定的领地数据（可能为 null — 仅服务端有效）。 */
     public TerritoryData getTerritory() { return territory; }
 
+    /**
+     * 获取客户端持有的领地 UUID。
+     * <p>客户端 Menu 实例的 {@link #territory} 为 null，此方法返回由 setup buffer 注入的 UUID，
+     * 供 {@code TerritoryTableScreen.sendAction} 等客户端逻辑使用。提交 2 的 ExtendedMenuType 重构将真正填充此值。
+     *
+     * @return 领地 UUID，若客户端尚未注入则返回 {@code null}
+     */
+    public String getClientTerritoryUuid() { return clientTerritoryUuid; }
+
     /** 获取当前玩家在此领地中的角色。 */
     public TerritoryRole getPlayerRole() { return playerRole; }
 
     // ================================================================
-    //  操作处理入口 — 由网络 handler 调用
-    // ================================================================
-
-    /**
-     * 处理来自客户端的 GUI 操作请求。
-     * <p>所有写操作均会触发日志记录与数据同步。
-     *
-     * @param payload C→S 操作载荷
-     */
-    public void handleAction(TerritoryGuiActionPayload payload) {
-        if (territory == null || serverPlayer == null) return;
-
-        String action = payload.actionType();
-        var manager = TerritoryDataManager.getInstance();
-
-        switch (action) {
-            case "SET_FLAG"       -> handleSetFlag(payload, manager);
-            case "ADD_MEMBER"     -> handleAddMember(payload, manager);
-            case "REMOVE_MEMBER"  -> handleRemoveMember(payload, manager);
-            case "SET_ROLE"       -> handleSetRole(payload, manager);
-            case "RENAME"         -> handleRename(payload, manager);
-            case "DELETE"         -> handleDelete(manager);
-            case "TRANSFER"       -> handleTransfer(payload, manager);
-            default -> {
-                // 未知操作类型 — 忽略
-            }
-        }
-    }
-
-    // ----- SET_FLAG -----
-    private void handleSetFlag(TerritoryGuiActionPayload payload, TerritoryDataManager manager) {
-        if (!canWrite()) return;
-        String flagName = payload.targetData().get("flag");
-        String valueStr = payload.targetData().get("value");
-        if (flagName == null || valueStr == null) return;
-
-        boolean newValue = Boolean.parseBoolean(valueStr);
-        territory.flags().put(flagName, newValue);
-        manager.updateTerritory(territory);
-
-        logAction(manager, "SET_FLAG", flagName + "=" + newValue);
-        syncPageData();
-    }
-
-    // ----- ADD_MEMBER -----
-    private void handleAddMember(TerritoryGuiActionPayload payload, TerritoryDataManager manager) {
-        if (!canWrite()) return;
-        String playerUuid = payload.targetData().get("playerUuid");
-        String role = payload.targetData().get("role");
-        if (playerUuid == null || role == null) return;
-
-        boolean added = manager.addMember(territory.uuid(),
-            new TerritoryData.MemberEntry(playerUuid, role));
-        if (added) {
-            logAction(manager, "ADD_MEMBER", playerUuid + " as " + role);
-            syncPageData();
-        }
-    }
-
-    // ----- REMOVE_MEMBER -----
-    private void handleRemoveMember(TerritoryGuiActionPayload payload, TerritoryDataManager manager) {
-        if (!canWrite()) return;
-        String playerUuid = payload.targetData().get("playerUuid");
-        if (playerUuid == null) return;
-
-        // 不允许移除拥有者
-        if (territory.ownerUuid().equals(playerUuid)) return;
-
-        boolean removed = manager.removeMember(territory.uuid(), playerUuid);
-        if (removed) {
-            logAction(manager, "REMOVE_MEMBER", playerUuid);
-            syncPageData();
-        }
-    }
-
-    // ----- SET_ROLE -----
-    private void handleSetRole(TerritoryGuiActionPayload payload, TerritoryDataManager manager) {
-        if (!canWrite()) return;
-        String playerUuid = payload.targetData().get("playerUuid");
-        String roleStr = payload.targetData().get("role");
-        if (playerUuid == null || roleStr == null) return;
-
-        // 不允许修改拥有者角色
-        if (territory.ownerUuid().equals(playerUuid)) return;
-
-        try {
-            TerritoryRole newRole = TerritoryRole.valueOf(roleStr.toUpperCase());
-            // 只有更高等级的角色才能设置角色
-            if (this.playerRole.isAtLeast(newRole) && !newRole.equals(TerritoryRole.OWNER)) {
-                boolean updated = manager.setMemberRole(territory.uuid(), playerUuid, newRole);
-                if (updated) {
-                    logAction(manager, "SET_ROLE", playerUuid + " -> " + newRole.name());
-                    syncPageData();
-                }
-            }
-        } catch (IllegalArgumentException ignored) {
-            // 无效角色名
-        }
-    }
-
-    // ----- RENAME -----
-    private void handleRename(TerritoryGuiActionPayload payload, TerritoryDataManager manager) {
-        if (!isOwner()) return;
-        String newName = payload.targetData().get("name");
-        if (newName == null || newName.isBlank()) return;
-
-        territory.name(newName.trim());
-        manager.updateTerritory(territory);
-        logAction(manager, "RENAME", newName.trim());
-        syncPageData();
-    }
-
-    // ----- DELETE -----
-    private void handleDelete(TerritoryDataManager manager) {
-        if (!isOwner()) return;
-
-        manager.deleteTerritory(territory.ownerUuid(), territory.uuid());
-        // 删除后关闭玩家 GUI
-        serverPlayer.closeContainer();
-    }
-
-    // ----- TRANSFER -----
-    private void handleTransfer(TerritoryGuiActionPayload payload, TerritoryDataManager manager) {
-        if (!isOwner()) return;
-        String targetUuid = payload.targetData().get("targetUuid");
-        if (targetUuid == null) return;
-
-        // 更新拥有者
-        String oldOwner = territory.ownerUuid();
-        territory.ownerUuid(targetUuid);
-        // 将旧拥有者添加为成员（如果不在成员列表中）
-        boolean alreadyMember = false;
-        for (TerritoryData.MemberEntry m : territory.members()) {
-            if (m.playerUuid().equals(oldOwner)) { alreadyMember = true; break; }
-        }
-        if (!alreadyMember) {
-            manager.addMember(territory.uuid(), new TerritoryData.MemberEntry(oldOwner, "admin"));
-        }
-        // 移除新拥有者的成员条目
-        manager.removeMember(territory.uuid(), targetUuid);
-
-        manager.updateTerritory(territory);
-        logAction(manager, "TRANSFER", oldOwner + " -> " + targetUuid);
-        syncPageData();
-    }
-
-    // ================================================================
-    //  权限辅助
+    //  权限辅助 — 供 syncPageData 构建页面数据时使用
     // ================================================================
 
     /** 当前玩家是否拥有写权限（OWNER 或 ADMIN）。 */
@@ -295,14 +176,6 @@ public class TerritoryTableMenu extends AbstractContainerMenu {
     /** 当前玩家是否为拥有者。 */
     private boolean isOwner() {
         return playerRole == TerritoryRole.OWNER;
-    }
-
-    /** 记录操作日志。 */
-    private void logAction(TerritoryDataManager manager, String action, String detail) {
-        if (serverPlayer == null || territory == null) return;
-        manager.addLog(territory.uuid(), new TerritoryLogEntry(
-            serverPlayer.getUUID().toString(), action, Instant.now(), detail
-        ));
     }
 
     // ================================================================

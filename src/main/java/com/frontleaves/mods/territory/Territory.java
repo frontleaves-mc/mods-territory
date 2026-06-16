@@ -5,6 +5,7 @@ import com.frontleaves.mods.territory.block.TerritoryTableBlock;
 import com.frontleaves.mods.territory.block.entity.TerritoryTableBlockEntity;
 import com.frontleaves.mods.territory.command.TerritoryCommand;
 import com.frontleaves.mods.territory.data.ModDataGen;
+import com.frontleaves.mods.territory.defense.ModBlockRegistry;
 import com.frontleaves.mods.territory.item.AdminTerritoryWandItem;
 import com.frontleaves.mods.territory.item.TerritoryTableBlockItem;
 import com.frontleaves.mods.territory.item.TerritoryBookItem;
@@ -22,7 +23,6 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.CreativeModeTabs;
-import net.minecraft.world.flag.FeatureFlags;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.material.PushReaction;
@@ -110,14 +110,16 @@ public class Territory {
     );
 
     // -- Menu Types --
+    // 使用 IMenuTypeExtension.create 注册扩展型 MenuType，支持通过 openMenu(provider, buf -> ...)
+    // 向客户端注入 territoryUuid + role（领地桌）/ playerUuid（领地之书）等额外数据。
     public static final DeferredHolder<MenuType<?>, MenuType<TerritoryTableMenu>> TERRITORY_TABLE_MENU = MENU_TYPES.register(
             "territory_table_menu",
-            () -> new MenuType<>((id, inv) -> new TerritoryTableMenu(id, inv), FeatureFlags.VANILLA_SET)
+            () -> net.neoforged.neoforge.common.extensions.IMenuTypeExtension.create(TerritoryTableMenu::new)
     );
 
     public static final DeferredHolder<MenuType<?>, MenuType<TerritoryBookMenu>> TERRITORY_BOOK_MENU = MENU_TYPES.register(
             "territory_book_menu",
-            () -> new MenuType<>((id, inv) -> new TerritoryBookMenu(id, inv), FeatureFlags.VANILLA_SET)
+            () -> net.neoforged.neoforge.common.extensions.IMenuTypeExtension.create(TerritoryBookMenu::new)
     );
 
     // -- Creative Tab --
@@ -163,6 +165,9 @@ public class Territory {
         } catch (IOException e) {
             LOGGER.error("Failed to initialize territory data manager", e);
         }
+        // 初始化模组方块分类表（Create 等模组方块的权限标志映射）。
+        // ServerStarting 阶段 BuiltInRegistries.BLOCK 已完成注册，可安全扫描。
+        ModBlockRegistry.initialize();
     }
 
     @SubscribeEvent

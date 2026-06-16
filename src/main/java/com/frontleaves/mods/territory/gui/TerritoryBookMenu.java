@@ -4,7 +4,7 @@ import com.frontleaves.mods.territory.Territory;
 import com.frontleaves.mods.territory.network.TerritoryGuiSyncPayload;
 import com.frontleaves.mods.territory.storage.TerritoryData;
 import com.frontleaves.mods.territory.storage.TerritoryDataManager;
-import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
@@ -43,22 +43,21 @@ public class TerritoryBookMenu extends AbstractContainerMenu {
     private List<String[]> clientShared = new ArrayList<>();
 
     // ----------------------------------------------------------------
-    //  MenuType 工厂构造器（客户端侧，由 MenuType 注册 lambda 调用）
+    //  客户端构造器（由 ExtendedMenuType setup buffer 注入）
+    // ----------------------------------------------------------------
+    public TerritoryBookMenu(int containerId, Inventory playerInventory, RegistryFriendlyByteBuf data) {
+        super(getMenuType(), containerId);
+        this.serverPlayer = null;
+        this.playerUuid = data.readUtf();
+    }
+
+    // ----------------------------------------------------------------
+    //  占位构造器（兜底，不通过 MenuType 工厂调用）
     // ----------------------------------------------------------------
     public TerritoryBookMenu(int containerId, Inventory playerInventory) {
         super(getMenuType(), containerId);
         this.serverPlayer = null;
         this.playerUuid = null;
-    }
-
-    // ----------------------------------------------------------------
-    //  客户端构造器（从 buffer 读取占位，实际数据由 sync 填充）
-    // ----------------------------------------------------------------
-    public TerritoryBookMenu(int containerId, Inventory playerInventory, FriendlyByteBuf buffer) {
-        super(getMenuType(), containerId);
-        this.serverPlayer = null;
-        this.playerUuid = null;
-        buffer.readUtf();  // 保留读取维持 buf 位置
     }
 
     // ----------------------------------------------------------------
