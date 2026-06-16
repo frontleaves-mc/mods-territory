@@ -3,10 +3,13 @@ package com.frontleaves.mods.territory.gui;
 import com.frontleaves.mods.territory.Territory;
 import com.frontleaves.mods.territory.defense.FlagCategory;
 import com.frontleaves.mods.territory.defense.FlagType;
+import com.frontleaves.mods.territory.defense.PlayerNameResolver;
 import com.frontleaves.mods.territory.defense.TerritoryLogEntry;
 import com.frontleaves.mods.territory.defense.TerritoryPermissionService;
 import com.frontleaves.mods.territory.defense.TerritoryRole;
 import com.frontleaves.mods.territory.network.TerritoryGuiSyncPayload;
+import com.frontleaves.mods.territory.network.TerritoryLogsSyncPayload;
+import com.frontleaves.mods.territory.network.TerritoryMembersSyncPayload;
 import com.frontleaves.mods.territory.storage.TerritoryData;
 import com.frontleaves.mods.territory.storage.TerritoryDataManager;
 import net.minecraft.network.RegistryFriendlyByteBuf;
@@ -183,7 +186,17 @@ public class TerritoryTableMenu extends AbstractContainerMenu {
     // ================================================================
 
     /**
+     * 解析领主玩家名（在线/缓存/回退 UUID）。
+     */
+    private String resolveOwnerName() {
+        if (serverPlayer == null || territory == null) return null;
+        return PlayerNameResolver.resolveName(serverPlayer.server, territory.ownerUuid());
+    }
+
+    /**
      * 根据当前页面构建数据并通过 {@link TerritoryGuiSyncPayload} 推送给客户端。
+     * <p>MEMBERS / LOGS 页改用专用 payload（绕开 GuiSyncPayload codec 不支持复合类型的限制）；
+     * FLAGS 页采用扁平 Boolean 键（避免 Map 被退化）。
      */
     public void syncPageData() {
         if (serverPlayer == null || territory == null) return;
@@ -196,6 +209,7 @@ public class TerritoryTableMenu extends AbstractContainerMenu {
                 pageType = "INFO";
                 pageData.put("name", territory.name());
                 pageData.put("ownerUuid", territory.ownerUuid());
+                pageData.put("ownerName", resolveOwnerName());
                 pageData.put("worldKey", territory.worldKey());
                 pageData.put("area", (int) TerritoryDataManager.calculateArea(territory));
                 pageData.put("memberCount", territory.members().size());
@@ -221,31 +235,34 @@ public class TerritoryTableMenu extends AbstractContainerMenu {
             }
 
             case PAGE_MEMBERS -> {
+                // 成员列表改用专用 payload 同步（绕开 GuiSyncPayload codec 限制）
                 pageType = "MEMBERS";
-                List<Map<String, Object>> membersData = new ArrayList<>();
-                for (TerritoryData.MemberEntry m : territory.members()) {
-                    Map<String, Object> mData = new HashMap<>();
-                    mData.put("playerUuid", m.playerUuid());
-                    mData.put("role", m.role());
-                    membersData.add(mData);
-                }
-                pageData.put("members", membersData);
                 pageData.put("ownerUuid", territory.ownerUuid());
+                pageData.put("ownerName", resolveOwnerName());
                 pageData.put("canEdit", canWrite());
+
+                List<TerritoryMembersSyncPayload.MemberInfo> membersData = new ArrayList<>();
+                for (TerritoryData.MemberEntry m : territory.members()) {
+                    String mName = PlayerNameResolver.resolveName(serverPlayer.server, m.playerUuid());
+                    boolean isOwner = m.playerUuid().equals(territory.ownerUuid());
+                    membersData.add(new TerritoryMembersSyncPayload.MemberInfo(
+                        m.playerUuid(), mName, m.role(), isOwner));
+                }
+                PacketDistributor.sendToPlayer(serverPlayer,
+                    new TerritoryMembersSyncPayload(territory.uuid(), membersData,
+                        territory.ownerUuid(), canWrite()));
             }
 
             case PAGE_FLAGS -> {
                 pageType = "FLAGS";
-                // 按分类序列化标志位
+                // 扁平化：每个 flag 用独立 Boolean 键，避免 Map 被 codec 退化成 String
                 for (FlagCategory cat : FlagCategory.values()) {
-                    Map<String, Boolean> catFlags = new HashMap<>();
                     for (FlagType flag : FlagType.getByCategory(cat)) {
                         Object val = territory.flags().get(flag.name());
-                        catFlags.put(flag.name(), val instanceof Boolean b ? b
-                            : val instanceof String s ? "allow".equalsIgnoreCase(s)
-                            : false);
+                        boolean boolVal = val instanceof Boolean b ? b
+                            : val instanceof String s ? "allow".equalsIgnoreCase(s) : false;
+                        pageData.put("flag." + flag.name(), boolVal);
                     }
-                    pageData.put(cat.name(), catFlags);
                 }
                 pageData.put("canEdit", canWrite());
             }
@@ -253,6 +270,7 @@ public class TerritoryTableMenu extends AbstractContainerMenu {
             case PAGE_SETTINGS -> {
                 pageType = "SETTINGS";
                 pageData.put("name", territory.name());
+                pageData.put("ownerName", resolveOwnerName());
                 pageData.put("canRename", isOwner());
                 pageData.put("canDelete", isOwner());
 
@@ -268,19 +286,18 @@ public class TerritoryTableMenu extends AbstractContainerMenu {
             }
 
             case PAGE_LOGS -> {
+                // 日志列表改用专用 payload 同步
                 pageType = "LOGS";
                 List<TerritoryLogEntry> logs = TerritoryDataManager.getInstance()
                     .getLogs(territory.uuid(), MAX_LOG_ENTRIES);
-                List<Map<String, Object>> logsData = new ArrayList<>();
+                List<TerritoryLogsSyncPayload.LogInfo> logsData = new ArrayList<>();
                 for (TerritoryLogEntry entry : logs) {
-                    Map<String, Object> eMap = new HashMap<>();
-                    eMap.put("playerUuid", entry.playerUuid());
-                    eMap.put("action", entry.action());
-                    eMap.put("timestamp", entry.timestamp().toString());
-                    eMap.put("detail", entry.detail());
-                    logsData.add(eMap);
+                    String opName = PlayerNameResolver.resolveName(serverPlayer.server, entry.playerUuid());
+                    logsData.add(new TerritoryLogsSyncPayload.LogInfo(
+                        opName, entry.action(), entry.timestamp().toString(), entry.detail()));
                 }
-                pageData.put("logs", logsData);
+                PacketDistributor.sendToPlayer(serverPlayer,
+                    new TerritoryLogsSyncPayload(territory.uuid(), logsData));
             }
 
             case PAGE_ADMIN -> {
@@ -288,6 +305,7 @@ public class TerritoryTableMenu extends AbstractContainerMenu {
                 pageData.put("isAdminTerritory", territory.admin());
                 pageData.put("uuid", territory.uuid());
                 pageData.put("ownerUuid", territory.ownerUuid());
+                pageData.put("ownerName", resolveOwnerName());
                 pageData.put("name", territory.name());
                 pageData.put("isOwner", isOwner());
             }

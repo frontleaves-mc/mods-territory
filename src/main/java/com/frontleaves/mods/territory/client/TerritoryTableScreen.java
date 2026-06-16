@@ -62,16 +62,64 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
     /** 当前页面的同步数据。 */
     private Map<String, Object> currentPageData = new java.util.HashMap<>();
 
+    /** 成员列表缓存（由 TerritoryMembersSyncPayload 专用 payload 更新）。 */
+    private java.util.List<com.frontleaves.mods.territory.network.TerritoryMembersSyncPayload.MemberInfo> currentMembers = new java.util.ArrayList<>();
+    /** 操作日志缓存（由 TerritoryLogsSyncPayload 专用 payload 更新）。 */
+    private java.util.List<com.frontleaves.mods.territory.network.TerritoryLogsSyncPayload.LogInfo> currentLogs = new java.util.ArrayList<>();
+
     // ===== 滚动状态 =====
     private int membersScrollOffset = 0;
     private int flagsScrollOffset = 0;
     private int logsScrollOffset = 0;
     private static final int MAX_VISIBLE_ROWS = 12;
 
+    // ===== 输入节点状态机（Screen 内单 EditBox 输入节点方案） =====
+    /** 当前激活的输入节点类型；NONE 表示无输入节点，正常显示页面。 */
+    private InputNode activeInputNode = InputNode.NONE;
+    private net.minecraft.client.gui.components.EditBox inputField;
+    private net.minecraft.client.gui.components.Button confirmBtn;
+    private net.minecraft.client.gui.components.Button cancelBtn;
+    /** 添加成员时的角色循环索引（0=visitor,1=member,2=admin）。 */
+    private int addMemberRoleIndex = 1;
+    private static final String[] ROLE_CYCLE = {"visitor", "member", "admin"};
+    /** 删除领地的二次确认状态。 */
+    private boolean pendingDelete = false;
+
+    /** 输入节点类型枚举。 */
+    private enum InputNode { NONE, ADD_MEMBER, RENAME, TRANSFER }
+
     public TerritoryTableScreen(TerritoryTableMenu menu, Inventory playerInventory, Component title) {
         super(menu, playerInventory, title);
         this.imageWidth = 280;   // 比 MC 标准容器更宽，容纳 6 个标签 + 内容
         this.imageHeight = 200;
+    }
+
+    @Override
+    protected void init() {
+        super.init();
+        int leftPos = (this.width - this.imageWidth) / 2;
+        int topPos = (this.height - this.imageHeight) / 2;
+        int cx = leftPos + this.imageWidth / 2;
+
+        // 输入节点 widget（默认隐藏，激活时显示）
+        inputField = new net.minecraft.client.gui.components.EditBox(
+            this.font, cx - 80, topPos + 90, 160, 14,
+            Component.translatable("territory.gui.input.placeholder"));
+        inputField.setMaxLength(40);
+        inputField.setVisible(false);
+        addRenderableWidget(inputField);
+
+        confirmBtn = net.minecraft.client.gui.components.Button.builder(
+            Component.translatable("territory.gui.input.confirm"),
+            b -> submitInputNode()).bounds(cx - 52, topPos + 110, 48, 16).build();
+        confirmBtn.visible = false;
+        addRenderableWidget(confirmBtn);
+
+        cancelBtn = net.minecraft.client.gui.components.Button.builder(
+            Component.translatable("territory.gui.input.cancel"),
+            b -> cancelInputNode()).bounds(cx + 4, topPos + 110, 48, 16).build();
+        cancelBtn.visible = false;
+        addRenderableWidget(cancelBtn);
     }
 
     // ================================================================
@@ -89,6 +137,18 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
         // 重置滚动位置
         this.membersScrollOffset = 0;
         this.flagsScrollOffset = 0;
+        this.logsScrollOffset = 0;
+    }
+
+    /** 接收成员列表专用 payload。 */
+    public void receiveMembersSync(com.frontleaves.mods.territory.network.TerritoryMembersSyncPayload payload) {
+        this.currentMembers = payload.members() != null ? payload.members() : new java.util.ArrayList<>();
+        this.membersScrollOffset = 0;
+    }
+
+    /** 接收操作日志专用 payload。 */
+    public void receiveLogsSync(com.frontleaves.mods.territory.network.TerritoryLogsSyncPayload payload) {
+        this.currentLogs = payload.logs() != null ? payload.logs() : new java.util.ArrayList<>();
         this.logsScrollOffset = 0;
     }
 
@@ -175,6 +235,16 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
             default -> { /* 未知页面 */ }
         }
 
+        // 操作按钮绘制（输入节点未激活时）
+        if (activeInputNode == InputNode.NONE) {
+            renderActionButtons(guiGraphics, x, y);
+        }
+
+        // 输入节点面板（激活时叠加在内容上方）
+        if (activeInputNode != InputNode.NONE) {
+            renderInputNodePanel(guiGraphics, x, y);
+        }
+
         // 底部角色提示（本地化角色名 + 标题）
         TerritoryRole role = menu.getPlayerRole();
         Component roleHint = Component.literal("[")
@@ -188,7 +258,8 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
     private void renderInfoPage(GuiGraphics guiGraphics, int x, int y) {
         int ly = y;
         ly = drawRow(guiGraphics, x, ly, "territory.gui.field.name", getString(currentPageData, "name"));
-        ly = drawRow(guiGraphics, x, ly, "territory.gui.field.owner", getString(currentPageData, "ownerUuid"));
+        ly = drawRow(guiGraphics, x, ly, "territory.gui.field.owner",
+            firstNonNull(getString(currentPageData, "ownerName"), getString(currentPageData, "ownerUuid")));
         ly = drawRow(guiGraphics, x, ly, "territory.gui.field.world", getString(currentPageData, "worldKey"));
 
         Object areaObj = currentPageData.get("area");
@@ -235,7 +306,6 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
     // ----- MEMBERS 页面 -----
     private void renderMembersPage(GuiGraphics guiGraphics, int x, int y, int mouseX, int mouseY) {
         boolean canEdit = getBool(currentPageData, "canEdit", false);
-        String ownerUuid = getString(currentPageData, "ownerUuid");
 
         Component header = Component.translatable("territory.gui.field.members")
             .append(" ")
@@ -244,9 +314,7 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
                 : Component.translatable("territory.gui.state.readonly"));
         y = drawSectionHeader(guiGraphics, x, y, header);
 
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> members = (List<Map<String, Object>>) currentPageData.get("members");
-        if (members == null || members.isEmpty()) {
+        if (currentMembers.isEmpty()) {
             guiGraphics.drawString(font, Component.translatable("territory.gui.members.empty"),
                 x + 4, y + 2, 0x888888);
             return;
@@ -255,16 +323,16 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
         // 表头
         int headerY = y;
         guiGraphics.fill(x, headerY, x + imageWidth - CONTENT_PADDING * 2, headerY + LINE_HEIGHT + 2, 0xFF2A2A2A);
-        guiGraphics.drawString(font, Component.translatable("territory.gui.field.uuid"), x + 4, headerY + 2, 0xAAAAAA);
+        guiGraphics.drawString(font, Component.translatable("territory.gui.field.name"), x + 4, headerY + 2, 0xAAAAAA);
         guiGraphics.drawString(font, Component.translatable("territory.gui.members.role"), x + 160, headerY + 2, 0xAAAAAA);
 
         int rowY = headerY + LINE_HEIGHT + 4;
-        int visibleEnd = Math.min(members.size(), membersScrollOffset + MAX_VISIBLE_ROWS);
+        int visibleEnd = Math.min(currentMembers.size(), membersScrollOffset + MAX_VISIBLE_ROWS);
 
         for (int i = membersScrollOffset; i < visibleEnd; i++) {
-            Map<String, Object> m = members.get(i);
-            String uuid = getString(m, "playerUuid");
-            String role = getString(m, "role");
+            var m = currentMembers.get(i);
+            String playerName = m.playerName();
+            String role = m.role();
 
             // 行悬停效果
             boolean hovered = mouseX >= x && mouseX <= x + imageWidth - CONTENT_PADDING * 2
@@ -273,25 +341,24 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
                 guiGraphics.fill(x, rowY, x + imageWidth - CONTENT_PADDING * 2, rowY + LINE_HEIGHT + 1, 0x33FFFFFF);
             }
 
-            // 高亮拥有者
-            boolean isOwner = uuid != null && uuid.equals(ownerUuid);
+            // 角色颜色（领主金色高亮）
             int roleColor = switch (role == null ? "" : role.toLowerCase()) {
                 case "admin" -> 0xFF9B59B6;
                 case "member" -> 0xFF50C878;
                 default -> 0xFFFFFF;
             };
-            if (isOwner) roleColor = 0xFFFFD700;
+            if (m.isOwner()) roleColor = 0xFFFFD700;
 
-            // 截断 UUID 显示
-            String displayUuid = uuid != null && uuid.length() > 20
-                ? uuid.substring(0, 17) + "..." : (uuid != null ? uuid : "?");
-            guiGraphics.drawString(font, displayUuid, x + 4, rowY + 2, 0xFFFFFF);
-            // 角色名本地化（role 存的是小写 admin/member，对应 territory.role.*）
+            // 玩家名（已解析，回退 UUID）
+            String displayName = playerName != null ? playerName : "?";
+            if (displayName.length() > 20) displayName = displayName.substring(0, 17) + "...";
+            guiGraphics.drawString(font, displayName, x + 4, rowY + 2, 0xFFFFFF);
+            // 角色名本地化
             String roleKey = "territory.role." + (role != null ? role.toLowerCase() : "visitor");
             guiGraphics.drawString(font, Component.translatable(roleKey), x + 160, rowY + 2, roleColor);
 
-            // 所有者标记
-            if (isOwner) {
+            // 拥有者标记
+            if (m.isOwner()) {
                 guiGraphics.drawString(font, Component.translatable("territory.gui.members.owner_tag"),
                     x + 210, rowY + 2, 0xFFFFD700);
             }
@@ -300,8 +367,8 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
         }
 
         // 滚动提示
-        if (members.size() > MAX_VISIBLE_ROWS) {
-            String scrollHint = (membersScrollOffset + 1) + "-" + visibleEnd + " / " + members.size();
+        if (currentMembers.size() > MAX_VISIBLE_ROWS) {
+            String scrollHint = (membersScrollOffset + 1) + "-" + visibleEnd + " / " + currentMembers.size();
             guiGraphics.drawString(font, scrollHint, x + imageWidth - CONTENT_PADDING * 2 - font.width(scrollHint),
                 y + imageHeight - 40, 0x666666);
         }
@@ -321,10 +388,6 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
         int categoryTop = y;
 
         for (FlagCategory cat : FlagCategory.values()) {
-            @SuppressWarnings("unchecked")
-            Map<String, Boolean> catFlags = (Map<String, Boolean>) currentPageData.get(cat.name());
-            if (catFlags == null) continue;
-
             // 分类标题（本地化 + emoji）
             int catY = categoryTop;
             Component catLabel = Component.translatable(cat.getTranslationKey())
@@ -333,8 +396,7 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
             catY += LINE_HEIGHT + 2;
 
             for (FlagType flag : FlagType.getByCategory(cat)) {
-                Boolean value = catFlags.get(flag.name());
-                if (value == null) value = false;
+                boolean value = getBool(currentPageData, "flag." + flag.name(), false);
 
                 // 行背景交替
                 int rowIdx = FlagType.getByCategory(cat).indexOf(flag);
@@ -426,9 +488,7 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
     private void renderLogsPage(GuiGraphics guiGraphics, int x, int y) {
         y = drawSectionHeader(guiGraphics, x, y, "territory.gui.field.logs");
 
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> logs = (List<Map<String, Object>>) currentPageData.get("logs");
-        if (logs == null || logs.isEmpty()) {
+        if (currentLogs.isEmpty()) {
             guiGraphics.drawString(font, Component.translatable("territory.gui.logs.empty"),
                 x + 4, y + 2, 0x888888);
             return;
@@ -442,13 +502,13 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
         guiGraphics.drawString(font, Component.translatable("territory.gui.field.detail"), x + 150, headerY + 2, 0xAAAAAA);
 
         int rowY = headerY + LINE_HEIGHT + 4;
-        int visibleEnd = Math.min(logs.size(), logsScrollOffset + MAX_VISIBLE_ROWS);
+        int visibleEnd = Math.min(currentLogs.size(), logsScrollOffset + MAX_VISIBLE_ROWS);
 
         for (int i = logsScrollOffset; i < visibleEnd; i++) {
-            Map<String, Object> entry = logs.get(i);
-            String timestamp = getString(entry, "timestamp");
-            String action = getString(entry, "action");
-            String detail = getString(entry, "detail");
+            var entry = currentLogs.get(i);
+            String timestamp = entry.timestamp();
+            String action = entry.action();
+            String detail = entry.detail();
 
             // 截断显示
             String timeShort = timestamp != null && timestamp.length() > 19
@@ -458,7 +518,7 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
 
             // 操作类型颜色编码
             int actionColor = switch (action == null ? "" : action) {
-                case "SET_FLAG" -> 0xFFFFB347;
+                case "SET_FLAG", "SET_PERSONAL_FLAG" -> 0xFFFFB347;
                 case "ADD_MEMBER", "REMOVE_MEMBER", "SET_ROLE" -> 0xFF50C878;
                 case "RENAME" -> 0xFF4A90D9;
                 case "DELETE", "TRANSFER" -> 0xFFE74C3C;
@@ -473,8 +533,8 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
         }
 
         // 滚动提示
-        if (logs.size() > MAX_VISIBLE_ROWS) {
-            String hint = (logsScrollOffset + 1) + "-" + visibleEnd + " / " + logs.size();
+        if (currentLogs.size() > MAX_VISIBLE_ROWS) {
+            String hint = (logsScrollOffset + 1) + "-" + visibleEnd + " / " + currentLogs.size();
             guiGraphics.drawString(font, hint,
                 x + imageWidth - CONTENT_PADDING * 2 - font.width(hint),
                 y + imageHeight - 40, 0x666666);
@@ -498,7 +558,8 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
             isAdminTerritory
                 ? Component.translatable("territory.gui.admin.type_admin").getString()
                 : Component.translatable("territory.gui.admin.type_normal").getString());
-        y = drawRow(guiGraphics, x, y, "territory.gui.field.owner", getString(currentPageData, "ownerUuid"));
+        y = drawRow(guiGraphics, x, y, "territory.gui.field.owner",
+            firstNonNull(getString(currentPageData, "ownerName"), getString(currentPageData, "ownerUuid")));
 
         if (isOwner) {
             y += SECTION_GAP + 4;
@@ -511,6 +572,110 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
             guiGraphics.drawString(font, Component.translatable("territory.gui.admin.owner_only"),
                 x + 4, y + 2, 0x888888);
         }
+    }
+
+    /**
+     * 渲染各页面的操作按钮（与 mouseClicked 命中区坐标一致）。
+     */
+    private void renderActionButtons(GuiGraphics guiGraphics, int leftPos, int topPos) {
+        int contentTop = topPos + CONTENT_PADDING + 4;
+        int x = leftPos + CONTENT_PADDING;
+        int contentW = imageWidth - CONTENT_PADDING * 2;
+
+        switch (menu.getCurrentPage()) {
+            case TerritoryTableMenu.PAGE_MEMBERS -> {
+                boolean canEdit = getBool(currentPageData, "canEdit", false);
+                if (canEdit) {
+                    int btnX = x + contentW - 60;
+                    int btnY = contentTop;
+                    guiGraphics.fill(btnX, btnY, btnX + 60, btnY + LINE_HEIGHT, 0xFF228822);
+                    guiGraphics.drawString(font, Component.translatable("territory.gui.members.btn_add"),
+                        btnX + 6, btnY + 2, 0xFFFFFF);
+                }
+                // 行内移除按钮
+                if (!currentMembers.isEmpty() && canEdit) {
+                    int rowY = contentTop + LINE_HEIGHT + 2 + LINE_HEIGHT + 4;
+                    int visibleEnd = Math.min(currentMembers.size(), membersScrollOffset + MAX_VISIBLE_ROWS);
+                    for (int i = membersScrollOffset; i < visibleEnd; i++) {
+                        var m = currentMembers.get(i);
+                        if (!m.isOwner()) {
+                            int rmX = x + 235;
+                            guiGraphics.fill(rmX, rowY, rmX + 28, rowY + LINE_HEIGHT, 0xFFAA2222);
+                            guiGraphics.drawString(font, Component.translatable("territory.gui.members.btn_remove"),
+                                rmX + 2, rowY + 2, 0xFFFFFF);
+                        }
+                        rowY += LINE_HEIGHT + 2;
+                    }
+                }
+            }
+            case TerritoryTableMenu.PAGE_SETTINGS -> {
+                boolean canRename = getBool(currentPageData, "canRename", false);
+                boolean canDelete = getBool(currentPageData, "canDelete", false);
+                int sy = contentTop + LINE_HEIGHT + 2 + SECTION_GAP;
+                if (canRename) {
+                    int btnX = x + 160;
+                    guiGraphics.fill(btnX, sy, btnX + 50, sy + LINE_HEIGHT, 0xFF4A90D9);
+                    guiGraphics.drawString(font, Component.translatable("territory.gui.settings.btn_rename"),
+                        btnX + 4, sy + 2, 0xFFFFFF);
+                }
+                if (canDelete) {
+                    int delX = x + contentW - 80;
+                    int delY = sy + SECTION_GAP + 4 + LINE_HEIGHT + 4 + SECTION_GAP;
+                    int color = pendingDelete ? 0xFFE74C3C : 0xFFAA2222;
+                    guiGraphics.fill(delX, delY, delX + 80, delY + LINE_HEIGHT + 4, color);
+                    Component label = Component.translatable(pendingDelete
+                        ? "territory.gui.settings.btn_delete_confirm" : "territory.gui.settings.btn_delete");
+                    guiGraphics.drawString(font, label, delX + 6, delY + 4, 0xFFFFFF);
+                }
+            }
+            case TerritoryTableMenu.PAGE_ADMIN -> {
+                boolean isOwner = getBool(currentPageData, "isOwner", false);
+                if (isOwner) {
+                    int ay = contentTop + LINE_HEIGHT + 2 + (LINE_HEIGHT + 1) * 3 + SECTION_GAP + 4;
+                    int btnX = x + contentW - 60;
+                    guiGraphics.fill(btnX, ay, btnX + 60, ay + LINE_HEIGHT + 4, 0xFFCC8800);
+                    guiGraphics.drawString(font, Component.translatable("territory.gui.admin.btn_transfer"),
+                        btnX + 6, ay + 4, 0xFFFFFF);
+                }
+            }
+        }
+    }
+
+    /**
+     * 渲染输入节点面板：半透明遮罩 + 标题 + EditBox/按钮（widget 自动绘制）。
+     */
+    private void renderInputNodePanel(GuiGraphics guiGraphics, int leftPos, int topPos) {
+        // 半透明遮罩
+        guiGraphics.fill(leftPos, topPos, leftPos + imageWidth, topPos + imageHeight, 0xAA000000);
+
+        int cx = leftPos + imageWidth / 2;
+        // 面板背景
+        int panelW = 200;
+        int panelH = 80;
+        int panelX = cx - panelW / 2;
+        int panelY = topPos + 60;
+        guiGraphics.fill(panelX, panelY, panelX + panelW, panelY + panelH, 0xDD2A2A2A);
+        guiGraphics.fill(panelX, panelY, panelX + panelW, panelY + 1, 0xFF555555);
+
+        // 标题
+        String titleKey = switch (activeInputNode) {
+            case ADD_MEMBER -> "territory.gui.input.title_add_member";
+            case RENAME -> "territory.gui.input.title_rename";
+            case TRANSFER -> "territory.gui.input.title_transfer";
+            case NONE -> "territory.gui.input.placeholder";
+        };
+        guiGraphics.drawString(font, Component.translatable(titleKey),
+            panelX + 8, panelY + 6, 0xFFFFD700);
+
+        // 添加成员时显示当前角色（点击 EditBox 外可循环，这里仅展示）
+        if (activeInputNode == InputNode.ADD_MEMBER) {
+            String roleKey = "territory.role." + ROLE_CYCLE[addMemberRoleIndex];
+            guiGraphics.drawString(font,
+                Component.translatable("territory.gui.input.role_prefix")
+                    .append(" ").append(Component.translatable(roleKey)),
+                panelX + 8, panelY + 28, 0xAAAAAA);
+        }
+        // EditBox / 按钮 widget 由父类 render 自动绘制（visible=true）
     }
 
     // ================================================================
@@ -529,6 +694,11 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
             return true;
         }
 
+        // 输入节点激活时，仅由 widget 自身处理 confirm/cancel，其余点击交给父类（EditBox 焦点等）
+        if (activeInputNode != InputNode.NONE) {
+            return super.mouseClicked(mouseX, mouseY, button);
+        }
+
         // ---- Flags 页面开关点击 ----
         if (menu.getCurrentPage() == TerritoryTableMenu.PAGE_FLAGS) {
             if (handleFlagToggleClick(mouseX, mouseY, leftPos, topPos)) {
@@ -536,7 +706,148 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
             }
         }
 
+        // ---- 各页面操作按钮检测 ----
+        switch (menu.getCurrentPage()) {
+            case TerritoryTableMenu.PAGE_MEMBERS -> {
+                if (handleMembersActions(mouseX, mouseY, leftPos, topPos)) return true;
+            }
+            case TerritoryTableMenu.PAGE_SETTINGS -> {
+                if (handleSettingsActions(mouseX, mouseY, leftPos, topPos)) return true;
+            }
+            case TerritoryTableMenu.PAGE_ADMIN -> {
+                if (handleAdminActions(mouseX, mouseY, leftPos, topPos)) return true;
+            }
+        }
+
         return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    // ================================================================
+    //  页面操作按钮命中检测
+    // ================================================================
+
+    /** MEMBERS 页操作按钮：添加成员（canEdit 时）、行内移除、角色循环、个人 flag 切换。 */
+    private boolean handleMembersActions(double mouseX, double mouseY, int leftPos, int topPos) {
+        boolean canEdit = getBool(currentPageData, "canEdit", false);
+        int contentTop = topPos + CONTENT_PADDING + 4;
+        int x = leftPos + CONTENT_PADDING;
+
+        // 「添加成员」按钮（canEdit 时，标题右侧）
+        if (canEdit) {
+            int btnX = x + imageWidth - CONTENT_PADDING * 2 - 60;
+            int btnY = contentTop;
+            if (mouseX >= btnX && mouseX <= btnX + 60 && mouseY >= btnY && mouseY <= btnY + LINE_HEIGHT) {
+                addMemberRoleIndex = 1;  // 默认 member
+                openInputNode(InputNode.ADD_MEMBER);
+                return true;
+            }
+        }
+
+        if (currentMembers.isEmpty() || !canEdit) return false;
+
+        // 行内操作：从表头下方开始
+        int rowY = contentTop + LINE_HEIGHT + 2 + LINE_HEIGHT + 4;
+        int visibleEnd = Math.min(currentMembers.size(), membersScrollOffset + MAX_VISIBLE_ROWS);
+        for (int i = membersScrollOffset; i < visibleEnd; i++) {
+            var m = currentMembers.get(i);
+            // 领主行不可操作
+            if (m.isOwner()) { rowY += LINE_HEIGHT + 2; continue; }
+
+            // 「移除」按钮（行末，x+235 处）
+            int rmX = x + 235;
+            if (mouseX >= rmX && mouseX <= rmX + 28 && mouseY >= rowY && mouseY <= rowY + LINE_HEIGHT) {
+                sendAction("REMOVE_MEMBER", Map.of("playerUuid", m.playerUuid()));
+                return true;
+            }
+            rowY += LINE_HEIGHT + 2;
+        }
+        return false;
+    }
+
+    /** SETTINGS 页操作按钮：重命名（isOwner）、删除（二次确认）。 */
+    private boolean handleSettingsActions(double mouseX, double mouseY, int leftPos, int topPos) {
+        boolean canRename = getBool(currentPageData, "canRename", false);
+        boolean canDelete = getBool(currentPageData, "canDelete", false);
+        int x = leftPos + CONTENT_PADDING;
+        int y = topPos + CONTENT_PADDING + 4;
+        y += LINE_HEIGHT + 2 + SECTION_GAP;  // 跳过标题
+
+        if (canRename) {
+            // 重命名按钮（名称行右侧）
+            int btnX = x + 160;
+            int btnY = y;
+            if (mouseX >= btnX && mouseX <= btnX + 50 && mouseY >= btnY && mouseY <= btnY + LINE_HEIGHT) {
+                openInputNode(InputNode.RENAME);
+                return true;
+            }
+        }
+
+        if (canDelete) {
+            // 删除按钮（危险区，靠近底部）
+            int delX = x + imageWidth - CONTENT_PADDING * 2 - 80;
+            int delY = y + SECTION_GAP + 4 + LINE_HEIGHT + 4 + SECTION_GAP;
+            if (mouseX >= delX && mouseX <= delX + 80 && mouseY >= delY && mouseY <= delY + LINE_HEIGHT + 4) {
+                if (pendingDelete) {
+                    sendAction("DELETE", Map.of());
+                    pendingDelete = false;
+                } else {
+                    pendingDelete = true;  // 首次点击进入确认态
+                }
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** ADMIN 页操作按钮：转让所有权（isOwner）。 */
+    private boolean handleAdminActions(double mouseX, double mouseY, int leftPos, int topPos) {
+        boolean isOwner = getBool(currentPageData, "isOwner", false);
+        if (!isOwner) return false;
+
+        int x = leftPos + CONTENT_PADDING;
+        int y = topPos + CONTENT_PADDING + 4;
+        y += LINE_HEIGHT + 2;  // 标题
+        y += LINE_HEIGHT + 1;  // uuid 行
+        y += LINE_HEIGHT + 1;  // type 行
+        y += LINE_HEIGHT + 1;  // owner 行
+        y += SECTION_GAP + 4;  // 危险区
+
+        // 转让按钮
+        int btnX = x + imageWidth - CONTENT_PADDING * 2 - 60;
+        int btnY = y;
+        if (mouseX >= btnX && mouseX <= btnX + 60 && mouseY >= btnY && mouseY <= btnY + LINE_HEIGHT + 4) {
+            openInputNode(InputNode.TRANSFER);
+            return true;
+        }
+        return false;
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        // 输入节点激活时：ESC 取消，Enter 提交，其余交给 EditBox
+        if (inputField != null && inputField.isFocused()) {
+            if (keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE) {
+                cancelInputNode();
+                return true;
+            }
+            if (keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_ENTER) {
+                submitInputNode();
+                return true;
+            }
+            // EditBox 消费按键；屏蔽容器默认快捷键（E 等）
+            if (inputField.keyPressed(keyCode, scanCode, modifiers)) return true;
+            return this.getMenu().getCarried().isEmpty();
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    /**
+     * ADD_MEMBER 输入节点激活时，点击 EditBox 外的角色标签区域循环切换角色。
+     */
+    private void cycleAddMemberRole() {
+        if (activeInputNode == InputNode.ADD_MEMBER) {
+            addMemberRoleIndex = (addMemberRoleIndex + 1) % ROLE_CYCLE.length;
+        }
     }
 
     @Override
@@ -585,10 +896,6 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
         cy += LINE_HEIGHT + 2 + SECTION_GAP; // 跳过标题
 
         for (FlagCategory cat : FlagCategory.values()) {
-            @SuppressWarnings("unchecked")
-            Map<String, Boolean> catFlags = (Map<String, Boolean>) currentPageData.get(cat.name());
-            if (catFlags == null) continue;
-
             cy += LINE_HEIGHT + 2; // 分类标题
 
             for (FlagType flag : FlagType.getByCategory(cat)) {
@@ -599,11 +906,11 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
                 if (mouseX >= toggleX && mouseX <= toggleX + toggleW
                     && mouseY >= cy && mouseY <= cy + toggleH) {
 
-                    // 发送 SET_FLAG 操作
-                    Boolean currentVal = catFlags.get(flag.name());
+                    // 发送 SET_FLAG 操作（读扁平 Boolean 键）
+                    boolean currentVal = getBool(currentPageData, "flag." + flag.name(), false);
                     sendAction("SET_FLAG", Map.of(
                         "flag", flag.name(),
-                        "value", String.valueOf(currentVal == null || !currentVal)
+                        "value", String.valueOf(!currentVal)
                     ));
                     return true;
                 }
@@ -616,10 +923,8 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
     // ---- 滚动方法 ----
 
     private boolean scrollMembers(double delta) {
-        @SuppressWarnings("unchecked")
-        List<?> list = (List<?>) currentPageData.get("members");
-        if (list == null) return false;
-        int maxOffset = Math.max(0, list.size() - MAX_VISIBLE_ROWS);
+        if (currentMembers.isEmpty()) return false;
+        int maxOffset = Math.max(0, currentMembers.size() - MAX_VISIBLE_ROWS);
         membersScrollOffset = (int) Math.clamp(membersScrollOffset - (int) delta, 0, maxOffset);
         return true;
     }
@@ -630,10 +935,8 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
     }
 
     private boolean scrollLogs(double delta) {
-        @SuppressWarnings("unchecked")
-        List<?> list = (List<?>) currentPageData.get("logs");
-        if (list == null) return false;
-        int maxOffset = Math.max(0, list.size() - MAX_VISIBLE_ROWS);
+        if (currentLogs.isEmpty()) return false;
+        int maxOffset = Math.max(0, currentLogs.size() - MAX_VISIBLE_ROWS);
         logsScrollOffset = (int) Math.clamp(logsScrollOffset - (int) delta, 0, maxOffset);
         return true;
     }
@@ -660,6 +963,49 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
             territoryUuid, actionType, targetData
         );
         PacketDistributor.sendToServer(payload);
+    }
+
+    // ================================================================
+    //  输入节点状态机
+    // ================================================================
+
+    /** 激活指定输入节点：显示 EditBox + 确认/取消按钮，抢占焦点。 */
+    private void openInputNode(InputNode node) {
+        this.activeInputNode = node;
+        this.inputField.setValue("");
+        this.inputField.setVisible(true);
+        this.inputField.setFocused(true);
+        setFocused(inputField);
+        this.confirmBtn.visible = true;
+        this.cancelBtn.visible = true;
+    }
+
+    /** 取消输入节点：隐藏 widget，交还焦点。 */
+    private void cancelInputNode() {
+        this.activeInputNode = InputNode.NONE;
+        this.inputField.setVisible(false);
+        this.inputField.setFocused(false);
+        this.confirmBtn.visible = false;
+        this.cancelBtn.visible = false;
+        this.pendingDelete = false;
+        this.setFocused(null);
+    }
+
+    /** 提交输入节点：按类型 sendAction，完成后关闭。 */
+    private void submitInputNode() {
+        String value = inputField.getValue().trim();
+        switch (activeInputNode) {
+            case ADD_MEMBER -> sendAction("ADD_MEMBER", Map.of(
+                "playerUuid", value, "role", ROLE_CYCLE[addMemberRoleIndex]));
+            case RENAME -> {
+                if (!value.isEmpty()) sendAction("RENAME", Map.of("name", value));
+            }
+            case TRANSFER -> {
+                if (!value.isEmpty()) sendAction("TRANSFER", Map.of("targetUuid", value));
+            }
+            case NONE -> { }
+        }
+        cancelInputNode();
     }
 
     // ================================================================
@@ -713,6 +1059,11 @@ public class TerritoryTableScreen extends net.minecraft.client.gui.screens.inven
     private static String getString(Map<String, Object> map, String key) {
         Object val = map.get(key);
         return val != null ? val.toString() : null;
+    }
+
+    /** 返回第一个非 null 值；用于领主名优先 ownerName 回退 ownerUuid。 */
+    private static String firstNonNull(String a, String b) {
+        return a != null ? a : b;
     }
 
     private static int getInt(Map<String, Object> map, String key) {

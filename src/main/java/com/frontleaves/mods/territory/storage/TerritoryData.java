@@ -222,7 +222,7 @@ public class TerritoryData {
     public static class MemberEntry {
         private final String playerUuid;
         private final String role;
-        private final Map<String, Boolean> personalFlags;
+        private Map<String, Boolean> personalFlags;
 
         public MemberEntry(String playerUuid, String role) {
             this(playerUuid, role, null);
@@ -244,6 +244,18 @@ public class TerritoryData {
 
         public Map<String, Boolean> personalFlags() {
             return personalFlags;
+        }
+
+        /**
+         * 设置该成员的个人权限覆盖。
+         * <p>personalFlags 延迟初始化，首次调用时创建。
+         *
+         * @param flag  权限标志名
+         * @param value 权限值
+         */
+        public void setPersonalFlag(String flag, boolean value) {
+            if (this.personalFlags == null) this.personalFlags = new java.util.HashMap<>();
+            this.personalFlags.put(flag, value);
         }
     }
 

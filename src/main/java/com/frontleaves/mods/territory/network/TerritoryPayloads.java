@@ -104,6 +104,18 @@ public class TerritoryPayloads {
             TerritoryGuiSyncPayload.STREAM_CODEC,
             TerritoryPayloads::handleGuiSync
         );
+
+        registrar.playToClient(
+            TerritoryMembersSyncPayload.TYPE,
+            TerritoryMembersSyncPayload.STREAM_CODEC,
+            TerritoryPayloads::handleMembersSync
+        );
+
+        registrar.playToClient(
+            TerritoryLogsSyncPayload.TYPE,
+            TerritoryLogsSyncPayload.STREAM_CODEC,
+            TerritoryPayloads::handleLogsSync
+        );
     }
 
     private static void handleSelectionUpdate(SelectionUpdatePayload payload, IPayloadContext context) {
@@ -145,7 +157,7 @@ public class TerritoryPayloads {
         String worldKey = payload.dimensionKey();
         String playerUuid = serverPlayer.getUUID().toString();
         int syncDistance = TerritoryConfig.SYNC_DISTANCE.get();
-        var nearby = manager.getTerritoriesNearby(worldKey, box.minX(), box.minZ(), syncDistance, playerUuid, payload.admin());
+        var nearby = manager.getTerritoriesNearby(worldKey, box.minX(), box.minZ(), syncDistance, playerUuid, payload.admin(), serverPlayer.server);
         PacketDistributor.sendToPlayer(serverPlayer, new TerritoryNearbySyncPayload(nearby));
 
         ServerSelectionCache.put(
@@ -351,7 +363,7 @@ public class TerritoryPayloads {
         int syncDistance = TerritoryConfig.SYNC_DISTANCE.get();
         String playerUuid = serverPlayer.getUUID().toString();
         var nearby = manager.getTerritoriesNearby(actualDimension, serverPos.getX(), serverPos.getZ(),
-            syncDistance, playerUuid, isAdminWand);
+            syncDistance, playerUuid, isAdminWand, serverPlayer.server);
 
         // 截断至最多 64 条
         if (nearby.size() > 64) {
@@ -476,6 +488,8 @@ public class TerritoryPayloads {
                         serverPlayer.getUUID().toString(), "SET_FLAG",
                         java.time.Instant.now(), flagName + "=" + flagValue
                     ));
+                    serverPlayer.displayClientMessage(
+                        Component.translatable("territory.msg.flag_updated").withStyle(ChatFormatting.GREEN), true);
                 }
             }
 
@@ -492,6 +506,8 @@ public class TerritoryPayloads {
                             serverPlayer.getUUID().toString(), "ADD_MEMBER",
                             java.time.Instant.now(), memberUuid + " as " + role
                         ));
+                        serverPlayer.displayClientMessage(
+                            Component.translatable("territory.msg.member_added").withStyle(ChatFormatting.GREEN), true);
                     }
                 }
             }
@@ -504,6 +520,8 @@ public class TerritoryPayloads {
                         serverPlayer.getUUID().toString(), "REMOVE_MEMBER",
                         java.time.Instant.now(), removeUuid
                     ));
+                    serverPlayer.displayClientMessage(
+                        Component.translatable("territory.msg.member_removed").withStyle(ChatFormatting.GREEN), true);
                 }
             }
 
@@ -520,6 +538,8 @@ public class TerritoryPayloads {
                                 serverPlayer.getUUID().toString(), "SET_ROLE",
                                 java.time.Instant.now(), roleUuid + " to " + newRoleStr
                             ));
+                            serverPlayer.displayClientMessage(
+                                Component.translatable("territory.msg.role_updated").withStyle(ChatFormatting.GREEN), true);
                         }
                     } catch (IllegalArgumentException ignored) {
                         // 无效角色名
@@ -536,6 +556,8 @@ public class TerritoryPayloads {
                         serverPlayer.getUUID().toString(), "RENAME",
                         java.time.Instant.now(), newName.trim()
                     ));
+                    serverPlayer.displayClientMessage(
+                        Component.translatable("territory.msg.territory_renamed").withStyle(ChatFormatting.GREEN), true);
                 }
             }
 
@@ -562,6 +584,26 @@ public class TerritoryPayloads {
                         serverPlayer.getUUID().toString(), "TRANSFER",
                         java.time.Instant.now(), "to " + newOwnerUuid
                     ));
+                    serverPlayer.displayClientMessage(
+                        Component.translatable("territory.msg.territory_transferred").withStyle(ChatFormatting.GREEN), true);
+                }
+            }
+
+            case "SET_PERSONAL_FLAG" -> {
+                String memberUuid = payload.targetData().get("playerUuid");
+                String flagName = payload.targetData().get("flag");
+                String flagValue = payload.targetData().get("value");
+                // ADMIN/OWNER 可为他人设；玩家可为自己设
+                boolean allowed = callerRole.isAtLeast(TerritoryRole.ADMIN)
+                    || (memberUuid != null && memberUuid.equals(playerUuid));
+                if (allowed && memberUuid != null && flagName != null && flagValue != null) {
+                    manager.setPersonalFlag(territory.uuid(), memberUuid, flagName, Boolean.parseBoolean(flagValue));
+                    manager.addLog(territory.uuid(), new TerritoryLogEntry(
+                        serverPlayer.getUUID().toString(), "SET_PERSONAL_FLAG",
+                        java.time.Instant.now(), memberUuid + " " + flagName + "=" + flagValue
+                    ));
+                    serverPlayer.displayClientMessage(
+                        Component.translatable("territory.msg.personal_flag_updated").withStyle(ChatFormatting.GREEN), true);
                 }
             }
 
@@ -601,5 +643,29 @@ public class TerritoryPayloads {
             }
         }
         return result;
+    }
+
+    /** 处理成员列表专用同步 payload。 */
+    private static void handleMembersSync(TerritoryMembersSyncPayload payload, IPayloadContext context) {
+        if (context.player() instanceof net.minecraft.client.player.LocalPlayer) {
+            net.minecraft.client.Minecraft.getInstance().execute(() -> {
+                var screen = net.minecraft.client.Minecraft.getInstance().screen;
+                if (screen instanceof TerritoryTableScreen tableScreen) {
+                    tableScreen.receiveMembersSync(payload);
+                }
+            });
+        }
+    }
+
+    /** 处理操作日志专用同步 payload。 */
+    private static void handleLogsSync(TerritoryLogsSyncPayload payload, IPayloadContext context) {
+        if (context.player() instanceof net.minecraft.client.player.LocalPlayer) {
+            net.minecraft.client.Minecraft.getInstance().execute(() -> {
+                var screen = net.minecraft.client.Minecraft.getInstance().screen;
+                if (screen instanceof TerritoryTableScreen tableScreen) {
+                    tableScreen.receiveLogsSync(payload);
+                }
+            });
+        }
     }
 }

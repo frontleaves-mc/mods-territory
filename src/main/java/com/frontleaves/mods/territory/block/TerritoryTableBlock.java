@@ -115,6 +115,10 @@ public class TerritoryTableBlock extends Block implements EntityBlock {
                     buf.writeUtf(territoryUuid);
                     buf.writeUtf(role.name());
                 });
+                // 容器建立后立即同步当前页数据，避免初次打开显示空白
+                if (serverPlayer.containerMenu instanceof TerritoryTableMenu tableMenu) {
+                    tableMenu.syncPageData();
+                }
                 return InteractionResult.CONSUME;
             }
         }

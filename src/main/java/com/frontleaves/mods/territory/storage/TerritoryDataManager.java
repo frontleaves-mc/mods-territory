@@ -243,6 +243,33 @@ public class TerritoryDataManager {
         return false;
     }
 
+    /**
+     * 设置指定成员的个人权限覆盖。
+     * <p>ADMIN/OWNER 可为任意成员设；玩家可为自己设。personalFlags 延迟初始化。
+     *
+     * @param territoryUuid 领地 UUID
+     * @param memberUuid    成员 UUID
+     * @param flag          权限标志名
+     * @param value         权限值
+     * @return 是否成功（领地/成员存在则 true）
+     */
+    public synchronized boolean setPersonalFlag(String territoryUuid, String memberUuid, String flag, boolean value) {
+        for (List<TerritoryData> territories : ownerMap.values()) {
+            for (TerritoryData td : territories) {
+                if (td.uuid().equals(territoryUuid)) {
+                    for (TerritoryData.MemberEntry member : td.members()) {
+                        if (member.playerUuid().equals(memberUuid)) {
+                            member.setPersonalFlag(flag, value);
+                            writeOwnerFile(td.ownerUuid(), ownerMap.get(td.ownerUuid()));
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
     public synchronized Optional<TerritoryData> findTerritoryByUuid(String uuid) {
         for (List<TerritoryData> territories : ownerMap.values()) {
             for (TerritoryData td : territories) {
@@ -300,7 +327,8 @@ public class TerritoryDataManager {
      * @return 附近领地边界列表
      */
     public synchronized List<TerritoryNearbySyncPayload.TerritoryBoundary> getTerritoriesNearby(
-            String worldKey, int centerX, int centerZ, int radius, String playerUuid, boolean isAdminWand) {
+            String worldKey, int centerX, int centerZ, int radius,
+            String playerUuid, boolean isAdminWand, net.minecraft.server.MinecraftServer server) {
         List<TerritoryNearbySyncPayload.TerritoryBoundary> result = new ArrayList<>();
         int searchMinX = centerX - radius;
         int searchMaxX = centerX + radius;
@@ -327,7 +355,8 @@ public class TerritoryDataManager {
                 result.add(new TerritoryNearbySyncPayload.TerritoryBoundary(
                     td.minX(), td.minY(), td.minZ(),
                     td.maxX(), td.maxY(), td.maxZ(),
-                    colorType, td.name()
+                    colorType,
+                    com.frontleaves.mods.territory.defense.PlayerNameResolver.resolveName(server, td.ownerUuid())
                 ));
             }
         }

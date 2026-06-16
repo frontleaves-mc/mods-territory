@@ -23,6 +23,7 @@ import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
 import net.neoforged.neoforge.event.level.ExplosionEvent;
+import net.neoforged.neoforge.event.level.PistonEvent;
 
 import java.util.Iterator;
 import java.util.Optional;
@@ -64,7 +65,7 @@ public class TerritoryDefenseHandler {
                 .findTerritoryAt(worldKey, pos.getX(), pos.getY(), pos.getZ());
         if (territory.isEmpty()) return;
 
-        cancelIfDenied(player, territory.get(), FlagType.destroy, "territory.defend.destroy", event);
+        cancelIfDenied(player, territory.get(), FlagType.destroy, event);
     }
 
     // ============================================================
@@ -90,7 +91,11 @@ public class TerritoryDefenseHandler {
                 .findTerritoryAt(worldKey, pos.getX(), pos.getY(), pos.getZ());
         if (territory.isEmpty()) return;
 
-        cancelIfDenied(player, territory.get(), FlagType.place, "territory.defend.place", event);
+        if (!TerritoryPermissionService.checkPermission(player, territory.get(), FlagType.place)) {
+            event.setCanceled(true);
+            TerritoryPermissionService.sendDenyMessage(player, resolveDenyKey(FlagType.place));
+            restorePlacedItem(player, event);
+        }
     }
 
     // ============================================================
@@ -112,6 +117,41 @@ public class TerritoryDefenseHandler {
         // 流体事件无玩家参与，直接检查宏标志 flow
         if (!isFlowAllowed(territory.get())) {
             event.setCanceled(true);
+        }
+    }
+
+    // ============================================================
+    // 3.5 活塞推动 — BlockEvent.PistonEvent.Pre
+    // ============================================================
+
+    @SubscribeEvent
+    public static void onPiston(PistonEvent.Pre event) {
+        if (event.getLevel().isClientSide()) return;
+
+        String worldKey = resolveWorldKey(event.getLevel());
+        if (worldKey == null) return;
+
+        net.minecraft.world.level.block.piston.PistonStructureResolver resolver = event.getStructureHelper();
+        if (resolver == null) return;
+
+        var manager = TerritoryDataManager.getInstance();
+        // 检查被推动的方块是否落在无 piston 权限的领地
+        for (BlockPos pushed : resolver.getToPush()) {
+            Optional<TerritoryData> territory = manager.findTerritoryAt(
+                worldKey, pushed.getX(), pushed.getY(), pushed.getZ());
+            if (territory.isPresent() && !isPistonAllowed(territory.get())) {
+                event.setCanceled(true);
+                return;  // 无玩家参与，不发 actionbar（与 flow 一致）
+            }
+        }
+        // 检查被活塞破坏的目标方块
+        for (BlockPos destroyed : resolver.getToDestroy()) {
+            Optional<TerritoryData> territory = manager.findTerritoryAt(
+                worldKey, destroyed.getX(), destroyed.getY(), destroyed.getZ());
+            if (territory.isPresent() && !isPistonAllowed(territory.get())) {
+                event.setCanceled(true);
+                return;
+            }
         }
     }
 
@@ -142,7 +182,7 @@ public class TerritoryDefenseHandler {
 
         // 查询方块分类，确定具体 FlagType
         FlagType flag = resolveBlockFlag(state);
-        cancelIfDenied(player, territory.get(), flag, "territory.defend.interact", event);
+        cancelIfDenied(player, territory.get(), flag, event);
     }
 
     // ============================================================
@@ -163,7 +203,7 @@ public class TerritoryDefenseHandler {
                 .findTerritoryAt(worldKey, pos.getX(), pos.getY(), pos.getZ());
         if (territory.isEmpty()) return;
 
-        cancelIfDenied(player, territory.get(), FlagType.destroy, "territory.defend.destroy", event);
+        cancelIfDenied(player, territory.get(), FlagType.destroy, event);
     }
 
     // ============================================================
@@ -194,7 +234,7 @@ public class TerritoryDefenseHandler {
         } else {
             flag = FlagType.interact;
         }
-        cancelIfDenied(player, territory.get(), flag, "territory.defend.interact", event);
+        cancelIfDenied(player, territory.get(), flag, event);
     }
 
     // ============================================================
@@ -285,19 +325,36 @@ public class TerritoryDefenseHandler {
 
     /**
      * 权限拒绝时取消事件并发送 Actionbar 消息。
+     * <p>提示键由 {@link #resolveDenyKey(FlagType)} 按 flag 自动派生：仅 destroy/place/container/damage
+     * 走专属提示键，其余细分交互回退通用 {@code territory.defend.interact}。
      *
      * @param player    目标玩家
      * @param territory 领地数据
-     * @param flag      权限标志
-     * @param i18nKey   国际化翻译键
+     * @param flag      权限标志（决定提示文案）
      * @param event     可取消事件
      */
     private static void cancelIfDenied(ServerPlayer player, TerritoryData territory,
-                                       FlagType flag, String i18nKey, ICancellableEvent event) {
+                                       FlagType flag, ICancellableEvent event) {
         if (!TerritoryPermissionService.checkPermission(player, territory, flag)) {
             event.setCanceled(true);
-            TerritoryPermissionService.sendDenyMessage(player, i18nKey);
+            TerritoryPermissionService.sendDenyMessage(player, resolveDenyKey(flag));
         }
+    }
+
+    /** lang 中已有专属翻译键的 flag 集合；其余 flag 回退通用 interact 键。 */
+    private static final java.util.Set<String> DEDICATED_DENY_KEYS = java.util.Set.of(
+        "destroy", "place", "container", "damage"
+    );
+
+    /**
+     * 按 flag 名解析拒绝提示的 i18n 键。
+     * <p>仅 destroy/place/container/damage 走专属键（lang 中已有），
+     * 其余细分交互回退通用 {@code territory.defend.interact}，避免出现未翻译键名。
+     */
+    private static String resolveDenyKey(FlagType flag) {
+        return DEDICATED_DENY_KEYS.contains(flag.name())
+            ? "territory.defend." + flag.name()
+            : "territory.defend.interact";
     }
 
     /**
@@ -413,6 +470,63 @@ public class TerritoryDefenseHandler {
             return serverLevel.dimension().location().toString();
         }
         return null;
+    }
+
+    /**
+     * 放置被拒绝后返还玩家手中被取消消耗的物品。
+     * <p>服务端 {@code setCanceled} 无法回滚客户端 vanilla 预测的物品消耗，故在此显式归还。
+     * 通过比对主/副手物品所对应的方块与被放置方块是否一致来确定来源手；
+     * 歧义（两手都匹配）时默认归主手。
+     *
+     * @param player 放置方块的玩家
+     * @param event  被取消的放置事件
+     */
+    private static void restorePlacedItem(ServerPlayer player, BlockEvent.EntityPlaceEvent event) {
+        net.minecraft.world.level.block.Block placedBlock = event.getPlacedBlock().getBlock();
+        net.minecraft.world.item.ItemStack mainHand = player.getMainHandItem();
+        net.minecraft.world.item.ItemStack offHand = player.getOffhandItem();
+
+        boolean mainMatches = isItemForBlock(mainHand, placedBlock);
+        boolean offMatches = isItemForBlock(offHand, placedBlock);
+
+        net.minecraft.world.item.ItemStack toRestore;
+        if (mainMatches) {
+            toRestore = mainHand;        // 主手优先（含歧义归主手）
+        } else if (offMatches) {
+            toRestore = offHand;
+        } else {
+            return;  // 两手都不匹配（防御性兜底，基本不触发）
+        }
+
+        net.neoforged.neoforge.items.ItemHandlerHelper.giveItemToPlayer(player, toRestore.copy());
+        player.inventoryMenu.broadcastChanges();
+    }
+
+    /**
+     * 判断给定物品栈是否是指定方块的放置物品（BlockItem 比对）。
+     */
+    private static boolean isItemForBlock(net.minecraft.world.item.ItemStack stack,
+                                          net.minecraft.world.level.block.Block block) {
+        if (stack.isEmpty()) return false;
+        if (stack.getItem() instanceof net.minecraft.world.item.BlockItem blockItem) {
+            return blockItem.getBlock() == block;
+        }
+        return false;
+    }
+
+    /**
+     * 判断领地是否允许活塞操作（piston flag 本身，回退 build 宏）。
+     * <p>未显式设置 piston 时，回退到 build 宏标志判定。
+     */
+    private static boolean isPistonAllowed(TerritoryData territory) {
+        Object val = territory.flags().get(FlagType.piston.name());
+        if (val instanceof Boolean boolVal) return boolVal;
+        if (val instanceof String strVal) return "allow".equalsIgnoreCase(strVal);
+        // 未显式设置 piston → 回退 build 宏标志
+        Object buildVal = territory.flags().get(FlagType.build.name());
+        if (buildVal instanceof Boolean boolVal) return boolVal;
+        if (buildVal instanceof String strVal) return "allow".equalsIgnoreCase(strVal);
+        return false;  // 默认禁止
     }
 
     /**
