@@ -10,7 +10,9 @@ import com.frontleaves.mods.territory.item.TerritoryTableBlockItem;
 import com.frontleaves.mods.territory.item.TerritoryBookItem;
 import com.frontleaves.mods.territory.item.TerritoryWandItem;
 import com.frontleaves.mods.territory.client.TerritoryTableScreen;
+import com.frontleaves.mods.territory.client.TerritoryBookScreen;
 import com.frontleaves.mods.territory.gui.TerritoryTableMenu;
+import com.frontleaves.mods.territory.gui.TerritoryBookMenu;
 import com.frontleaves.mods.territory.network.TerritoryPayloads;
 import com.frontleaves.mods.territory.config.TerritoryConfig;
 import com.frontleaves.mods.territory.storage.ServerSelectionCache;
@@ -113,6 +115,11 @@ public class Territory {
             () -> new MenuType<>((id, inv) -> new TerritoryTableMenu(id, inv), FeatureFlags.VANILLA_SET)
     );
 
+    public static final DeferredHolder<MenuType<?>, MenuType<TerritoryBookMenu>> TERRITORY_BOOK_MENU = MENU_TYPES.register(
+            "territory_book_menu",
+            () -> new MenuType<>((id, inv) -> new TerritoryBookMenu(id, inv), FeatureFlags.VANILLA_SET)
+    );
+
     // -- Creative Tab --
     public static final DeferredHolder<CreativeModeTab, CreativeModeTab> TERRITORY_TAB = CREATIVE_MODE_TABS.register(
             "territory_tab",
@@ -171,7 +178,9 @@ public class Territory {
     }
 
     private void registerScreens(RegisterMenuScreensEvent event) {
-        TerritoryTableMenu.setMenuType(TERRITORY_TABLE_MENU.get());
+        // MenuType 现由 Menu 自身通过 Territory.TERRITORY_*_MENU.get() 直接获取，
+        // 不再需要客户端侧静态字段注入。
         event.register(TERRITORY_TABLE_MENU.get(), TerritoryTableScreen::new);
+        event.register(TERRITORY_BOOK_MENU.get(), TerritoryBookScreen::new);
     }
 }

@@ -1,6 +1,9 @@
 package com.frontleaves.mods.territory.block;
 
 import com.frontleaves.mods.territory.block.entity.TerritoryTableBlockEntity;
+import com.frontleaves.mods.territory.gui.TerritoryTableMenu;
+import com.frontleaves.mods.territory.storage.TerritoryData;
+import com.frontleaves.mods.territory.storage.TerritoryDataManager;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -26,6 +29,8 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
+
+import java.util.Optional;
 
 /**
  * 领地桌方块 — 领地系统的核心方块，防爆且不可被活塞推动。
@@ -103,7 +108,8 @@ public class TerritoryTableBlock extends Block implements EntityBlock {
     }
 
     /**
-     * 为已绑定领地桌提供 MenuProvider，Task 15 创建 TerritoryTableMenu 后将正式生效。
+     * 为已绑定领地桌提供 MenuProvider，打开真正的 TerritoryTableMenu。
+     * <p>通过 SimpleMenuProvider 在打开时实例化 Menu，领地数据由服务端构造器注入。
      */
     @Override
     public MenuProvider getMenuProvider(BlockState state, Level level, BlockPos pos) {
@@ -112,16 +118,15 @@ public class TerritoryTableBlock extends Block implements EntityBlock {
             String territoryUuid = tableBE.getTerritoryUuid();
             if (territoryUuid != null) {
                 return new SimpleMenuProvider(
-                    (containerId, playerInventory, player) -> new AbstractContainerMenu(null, containerId) {
-                        @Override
-                        public ItemStack quickMoveStack(Player p, int i) {
-                            return ItemStack.EMPTY;
+                    (containerId, playerInventory, player) -> {
+                        Optional<TerritoryData> territoryOpt = TerritoryDataManager.getInstance()
+                            .findTerritoryByUuid(territoryUuid);
+                        if (territoryOpt.isEmpty() || !(player instanceof ServerPlayer serverPlayer)) {
+                            // 兜底：领地不存在或玩家类型不符时返回占位 Menu（仍需满足工厂签名）
+                            return new TerritoryTableMenu(containerId, playerInventory);
                         }
-
-                        @Override
-                        public boolean stillValid(Player p) {
-                            return true;
-                        }
+                        return new TerritoryTableMenu(containerId, playerInventory,
+                            territoryOpt.get(), serverPlayer);
                     },
                     Component.translatable("territory.gui.table_menu")
                 );

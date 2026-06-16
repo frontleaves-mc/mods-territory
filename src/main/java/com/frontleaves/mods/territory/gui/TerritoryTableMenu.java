@@ -1,5 +1,6 @@
 package com.frontleaves.mods.territory.gui;
 
+import com.frontleaves.mods.territory.Territory;
 import com.frontleaves.mods.territory.defense.FlagCategory;
 import com.frontleaves.mods.territory.defense.FlagType;
 import com.frontleaves.mods.territory.defense.TerritoryLogEntry;
@@ -100,17 +101,15 @@ public class TerritoryTableMenu extends AbstractContainerMenu {
     }
 
     // ================================================================
-    //  MenuType — 由 Territory.registerScreens() 注入
+    //  MenuType — 直接引用 Territory 注册的 DeferredHolder
     // ================================================================
 
-    private static MenuType<TerritoryTableMenu> menuType;
-
-    public static void setMenuType(MenuType<TerritoryTableMenu> type) {
-        menuType = type;
-    }
-
-    public static MenuType<TerritoryTableMenu> getMenuType() {
-        return menuType;
+    /**
+     * 获取本 Menu 的注册类型。直接引用 {@link Territory#TERRITORY_TABLE_MENU}，
+     * 由 DeferredHolder 保证在任意物理端注册完成后均可获取，避免静态字段注入。
+     */
+    private static MenuType<TerritoryTableMenu> getMenuType() {
+        return Territory.TERRITORY_TABLE_MENU.get();
     }
 
     // ================================================================

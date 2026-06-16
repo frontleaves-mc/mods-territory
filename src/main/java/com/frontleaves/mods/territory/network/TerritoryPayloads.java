@@ -8,6 +8,7 @@ import com.frontleaves.mods.territory.config.TerritoryConfig;
 import com.frontleaves.mods.territory.defense.TerritoryLogEntry;
 import com.frontleaves.mods.territory.defense.TerritoryRole;
 import com.frontleaves.mods.territory.geometry.AABB;
+import com.frontleaves.mods.territory.gui.TerritoryBookMenu;
 import com.frontleaves.mods.territory.storage.ServerSelectionCache;
 import com.frontleaves.mods.territory.storage.TerritoryData;
 import com.frontleaves.mods.territory.storage.TerritoryDataManager;
@@ -18,6 +19,7 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.SimpleMenuProvider;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
@@ -52,12 +54,6 @@ public class TerritoryPayloads {
             TerritoryBookOpenPayload.TYPE,
             TerritoryBookOpenPayload.STREAM_CODEC,
             TerritoryPayloads::handleBookOpen
-        );
-
-        registrar.playToClient(
-            TerritoryListResponsePayload.TYPE,
-            TerritoryListResponsePayload.STREAM_CODEC,
-            TerritoryPayloads::handleListResponse
         );
 
         registrar.playToServer(
@@ -163,39 +159,17 @@ public class TerritoryPayloads {
         var player = context.player();
         if (!(player instanceof ServerPlayer serverPlayer)) return;
 
-        String playerUuid = serverPlayer.getUUID().toString();
-        var manager = TerritoryDataManager.getInstance();
+        serverPlayer.openMenu(new SimpleMenuProvider(
+            (containerId, playerInventory, p) -> new TerritoryBookMenu(containerId, playerInventory, serverPlayer),
+            Component.translatable("gui.territory.book.title")
+        ));
 
-        java.util.List<TerritoryData> ownedData = manager.findTerritoriesByOwner(playerUuid);
-        java.util.List<TerritoryListResponsePayload.TerritoryEntry> owned = new java.util.ArrayList<>();
-        for (TerritoryData td : ownedData) {
-            owned.add(new TerritoryListResponsePayload.TerritoryEntry(
-                td.uuid(), td.name(), td.worldKey(),
-                TerritoryDataManager.calculateArea(td), td.hasSpawn()
-            ));
-        }
-
-        java.util.List<TerritoryData> sharedData = manager.findTerritoriesByMember(playerUuid);
-        java.util.List<TerritoryListResponsePayload.TerritoryEntry> shared = new java.util.ArrayList<>();
-        for (TerritoryData td : sharedData) {
-            shared.add(new TerritoryListResponsePayload.TerritoryEntry(
-                td.uuid(), td.name(), td.worldKey(),
-                TerritoryDataManager.calculateArea(td), td.hasSpawn()
-            ));
-        }
-
-        PacketDistributor.sendToPlayer(serverPlayer,
-            new TerritoryListResponsePayload(owned, shared));
-    }
-
-    private static void handleListResponse(TerritoryListResponsePayload payload, IPayloadContext context) {
-        if (context.player() instanceof net.minecraft.client.player.LocalPlayer) {
-            net.minecraft.client.Minecraft.getInstance().execute(() -> {
-                if (net.minecraft.client.Minecraft.getInstance().screen instanceof TerritoryBookScreen screen) {
-                    screen.setTerritoryData(payload.owned(), payload.shared());
-                }
-            });
-        }
+        // 容器建立后推送列表数据（延迟一 tick，确保 Menu 已注册到玩家）
+        serverPlayer.server.execute(() -> {
+            if (serverPlayer.containerMenu instanceof TerritoryBookMenu bookMenu) {
+                bookMenu.syncBookList();
+            }
+        });
     }
 
     private static void handleTeleportRequest(TerritoryTeleportRequestPayload payload, IPayloadContext context) {
@@ -543,10 +517,34 @@ public class TerritoryPayloads {
     private static void handleGuiSync(TerritoryGuiSyncPayload payload, IPayloadContext context) {
         if (context.player() instanceof net.minecraft.client.player.LocalPlayer) {
             net.minecraft.client.Minecraft.getInstance().execute(() -> {
-                if (net.minecraft.client.Minecraft.getInstance().screen instanceof TerritoryTableScreen screen) {
-                    screen.receiveSyncData(payload.pageType(), payload.pageData());
+                var screen = net.minecraft.client.Minecraft.getInstance().screen;
+                if (payload.pageType().equals("BOOK_LIST")) {
+                    // 领地之书列表同步
+                    if (screen instanceof TerritoryBookScreen bookScreen) {
+                        var menu = bookScreen.getMenu();
+                        menu.receiveBookList(
+                            parseBookList(payload.pageData().get("owned")),
+                            parseBookList(payload.pageData().get("shared"))
+                        );
+                        bookScreen.onSyncReceived();
+                    }
+                } else if (screen instanceof TerritoryTableScreen tableScreen) {
+                    tableScreen.receiveSyncData(payload.pageType(), payload.pageData());
                 }
             });
         }
+    }
+
+    /** 将 sync payload 中的字符串编码解析为 List<String[]>（领地之书列表）。 */
+    private static java.util.List<String[]> parseBookList(Object encoded) {
+        java.util.List<String[]> result = new java.util.ArrayList<>();
+        if (encoded instanceof String s && !s.isEmpty()) {
+            for (String line : s.split("\n")) {
+                if (!line.isEmpty()) {
+                    result.add(TerritoryBookMenu.decodeEntry(line));
+                }
+            }
+        }
+        return result;
     }
 }

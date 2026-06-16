@@ -46,6 +46,7 @@
   "gui.territory.book.empty.shared": "No territories shared with you",
   "gui.territory.book.empty.search": "No matching territories found",
   "gui.territory.book.stats": "Total: %s territories",
+  "gui.territory.book.teleport": "Teleport",
 
   "territory.cmd.not_implemented": "Not implemented yet",
   "territory.cmd.wand_given": "Gave you a Territory Wand",

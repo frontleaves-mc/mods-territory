@@ -46,6 +46,7 @@
   "gui.territory.book.empty.shared": "没有共享给你的领地",
   "gui.territory.book.empty.search": "没有找到匹配的领地",
   "gui.territory.book.stats": "共 %s 个领地",
+  "gui.territory.book.teleport": "传送",
 
   "territory.cmd.not_implemented": "暂未实现",
   "territory.cmd.wand_given": "已给予领地选区工具",

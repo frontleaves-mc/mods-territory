@@ -26,3 +26,5 @@ src/generated/
 ### AI ###
 .omo/
 bin/main
+.superpowers/
+docs/superpowers/
