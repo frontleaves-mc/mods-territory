@@ -1,6 +1,5 @@
 package com.frontleaves.mods.territory.item;
 
-import com.frontleaves.mods.territory.client.ClientSelectionState;
 import com.frontleaves.mods.territory.event.WandInteractionHandler;
 import com.frontleaves.mods.territory.network.TerritoryWandShiftPayload;
 import net.minecraft.world.InteractionHand;
@@ -22,7 +21,7 @@ import net.neoforged.neoforge.network.PacketDistributor;
  * <ul>
  *   <li>无体积限制（服务端跳过校验）</li>
  *   <li>仅 OP（permission level ≥ 2）可使用选区功能</li>
- *   <li>使用独立的 {@link com.frontleaves.mods.territory.client.ClientSelectionState#getAdmin()} 选区状态</li>
+ *   <li>使用独立的 admin 选区状态（由 {@code WandInteractionHandler} 客户端侧隔离）</li>
  * </ul>
  */
 public class AdminTerritoryWandItem extends Item {

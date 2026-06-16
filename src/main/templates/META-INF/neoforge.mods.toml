@@ -5,7 +5,7 @@
 # Find more information on toml format here:  https://github.com/toml-lang/toml
 # The name of the mod loader type to load - for regular FML @Mod mods it should be javafml
 modLoader = "javafml" #mandatory
-# A version range to match for said mod loader - for regular FML @Mod it will be the the FML version. This is currently 47.
+# A version range to match for said mod loader - for regular NeoForge @Mod it will be the the FML version. This is currently 4.
 loaderVersion = "${loader_version_range}" #mandatory
 # The license for you mod. This is mandatory metadata and allows for easier comprehension of your redistributive properties.
 # Review your options at https://choosealicense.com/. All rights reserved is the default copyright stance, and is thus the default here.
@@ -35,8 +35,9 @@ authors = "${mod_authors}" #optional
 description = '''${mod_description}'''
 
 # The [[mixins]] block allows you to declare your mixin config to FML so that it gets loaded.
-#[[mixins]]
-#config="${mod_id}.mixins.json"
+# 文件名与 src/main/resources/mixin.territory.json 一致。
+[[mixins]]
+config = "mixin.territory.json"
 
 # The [[accessTransformers]] block allows you to declare where your AT file is.
 # If this block is omitted, a fallback attempt will be made to load an AT from META-INF/accesstransformer.cfg
@@ -70,6 +71,14 @@ type = "required"
 # This version range declares a minimum of the current minecraft version up to but not including the next major version
 versionRange = "${minecraft_version_range}"
 ordering = "NONE"
+side = "BOTH"
+
+# Create 模组为可选依赖：防御系统的机械动力兼容（Mixin + FakePlayer 追踪）需要 Create 存在。
+# 未安装 Create 时上述功能静默跳过，不影响核心领地功能。
+[[dependencies."${mod_id}"]]
+modId = "create"
+type = "optional"
+ordering = "AFTER"
 side = "BOTH"
 
 # Features are specific properties of the game environment, that you may want to declare you require. This example declares

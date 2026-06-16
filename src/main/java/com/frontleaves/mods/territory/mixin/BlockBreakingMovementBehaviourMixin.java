@@ -25,6 +25,12 @@ import java.util.UUID;
  * <p>
  * 注入 {@code visitNewPosition} 方法，在装置移动到新位置时
  * 检查目标方块是否位于领地范围内，并验证装置拥有者是否拥有破坏权限。
+ * <p>
+ * <b>兼容性提示</b>：本 Mixin 硬依赖 Create 模组的
+ * {@code BlockBreakingMovementBehaviour#visitNewPosition} 与 {@link MovementContext#blockEntityData}
+ * 中的 {@code Owner} NBT 约定。经验证兼容 Create 6.0.x；若 Create 跨大版本变更方法签名或 NBT 约定，
+ * 需同步更新 {@code @Inject} 的 method 名与 owner UUID 提取逻辑。该 Mixin 仅在 Create 已加载时
+ * 由 FML 解析（见 {@code mods.toml} 的 optional 依赖声明），缺失时自动跳过。
  *
  * @author xiao_lfeng
  */

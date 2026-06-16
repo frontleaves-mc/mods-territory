@@ -87,9 +87,15 @@ public final class TerritoryPermissionService {
     }
 
     /**
-     * 通过 UUID 字符串获取玩家在领地中的角色（内部辅助方法）。
+     * 通过 UUID 字符串获取玩家在领地中的角色。
+     * <p>public 以供网络层 {@code TerritoryPayloads.handleGuiAction} 在处理 GUI 操作时
+     * 进行服务端权威权限校验（不信任客户端）。
+     *
+     * @param territory   领地数据
+     * @param playerUuid  玩家 UUID 字符串
+     * @return 对应的 {@link TerritoryRole}
      */
-    private static TerritoryRole getPlayerRoleByUuid(TerritoryData territory, String playerUuid) {
+    public static TerritoryRole getPlayerRoleByUuid(TerritoryData territory, String playerUuid) {
         // 拥有者
         if (territory.ownerUuid().equals(playerUuid)) return TerritoryRole.OWNER;
 

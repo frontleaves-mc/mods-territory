@@ -74,16 +74,17 @@ public class ModBlockRegistry {
     }
 
     /**
-     * 从 classpath 加载 {@code territory-modblocks.toml} 手动配置。
+     * 从 classpath 加载 {@code territory-modblocks.csv} 手动配置。
      * <p>
-     * 格式：{@code "namespace:path" = "flagtype_name"}
+     * 文件采用简单键值对格式 {@code "namespace:path" = "flagtype_name"}（非标准 CSV/TOML，
+     * 此前误用 .toml 扩展名易引发误解，现统一为 .csv）。
      * 注释行（以 {@code #} 开头）和空行会被跳过。
      */
     private static void loadTomlConfig() {
         try (InputStream is = ModBlockRegistry.class.getClassLoader()
-                .getResourceAsStream("territory-modblocks.toml")) {
+                .getResourceAsStream("territory-modblocks.csv")) {
             if (is == null) {
-                LOGGER.warn("未找到 territory-modblocks.toml，跳过手动配置加载");
+                LOGGER.warn("未找到 territory-modblocks.csv，跳过手动配置加载");
                 return;
             }
             try (BufferedReader reader = new BufferedReader(
@@ -114,7 +115,7 @@ public class ModBlockRegistry {
                 }
             }
         } catch (IOException e) {
-            LOGGER.error("加载 territory-modblocks.toml 失败", e);
+            LOGGER.error("加载 territory-modblocks.csv 失败", e);
         }
     }
 
