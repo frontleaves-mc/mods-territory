@@ -28,3 +28,7 @@ src/generated/
 bin/main
 .superpowers/
 docs/superpowers/
+
+### 污染文件（IDE/反编译泄漏，不应纳入版本控制）###
+bin/
+net/
